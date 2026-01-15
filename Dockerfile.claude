@@ -1,0 +1,40 @@
+# Dockerfile.claude
+# Safe sandbox for autonomous Claude Code sessions
+# Use this for Ralph or other long-running autonomous work
+
+FROM ubuntu:22.04
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    python3 \
+    python3-pip \
+    python3-venv \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js (LTS)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
+
+# Install Bun
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:${PATH}"
+
+# Install Claude Code globally
+RUN npm install -g @anthropic-ai/claude-code
+
+# Set up workspace
+WORKDIR /workspace
+
+# Default command
+CMD ["bash"]
+
+# =============================================
+# BUILD: docker build -f Dockerfile.claude -t claude-sandbox .
+# RUN:   docker run -it -v $(pwd):/workspace claude-sandbox
+# =============================================

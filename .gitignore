@@ -1,0 +1,129 @@
+# ==========================================
+# HACKATHON REPO .gitignore
+# ==========================================
+
+# ------------------------------------------
+# Dependencies
+# ------------------------------------------
+node_modules/
+.pnpm-store/
+.yarn/
+*.lock
+!bun.lockb
+
+# ------------------------------------------
+# Build outputs
+# ------------------------------------------
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# ------------------------------------------
+# Environment & secrets (NEVER COMMIT)
+# ------------------------------------------
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+
+# ------------------------------------------
+# Python
+# ------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+*.egg-info/
+.eggs/
+*.sqlite3
+
+# ------------------------------------------
+# IDE & Editor
+# ------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ------------------------------------------
+# Testing & Coverage
+# ------------------------------------------
+coverage/
+.nyc_output/
+*.lcov
+.pytest_cache/
+
+# ------------------------------------------
+# Logs
+# ------------------------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ------------------------------------------
+# Claude Code - USER-SPECIFIC (don't commit)
+# ------------------------------------------
+# User's global Claude settings (these are personal)
+# Note: ~/.claude/ is outside repo, no action needed
+
+# Session-specific files (if any get created in repo)
+.claude-session/
+*.claude-backup
+
+# ------------------------------------------
+# Claude Code - PROJECT FILES (DO COMMIT)
+# ------------------------------------------
+# These SHOULD be committed (not ignored):
+# .claude/settings.json     ✓ Commit - shared hooks
+# .claude/commands/         ✓ Commit - shared commands
+# .claude/agents/           ✓ Commit - shared agents
+# .claude/skills/           ✓ Commit - shared skills
+# CLAUDE.md                 ✓ Commit - project instructions
+# TASKS.md                  ✓ Commit - task tracking
+
+# ------------------------------------------
+# agent-browser
+# ------------------------------------------
+# Screenshots and test artifacts
+*.png
+!docs/*.png
+screenshots/
+verification.png
+
+# Browser state (contains auth tokens - never commit)
+auth.json
+*.state.json
+
+# ------------------------------------------
+# Temporary files
+# ------------------------------------------
+tmp/
+temp/
+*.tmp
+*.bak
+
+# ------------------------------------------
+# OS files
+# ------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ------------------------------------------
+# Docker
+# ------------------------------------------
+.docker/
