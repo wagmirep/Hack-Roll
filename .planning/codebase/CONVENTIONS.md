@@ -1,128 +1,171 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-01-17
+**Analysis Date:** 2026-01-18
 
 ## Naming Patterns
 
 **Files:**
-- snake_case.py for Python files (`main.py`, `processor.py`, `word_counting.py`)
-- camelCase.ts for TypeScript utilities (`useRecording.ts`, `client.ts`)
-- PascalCase.tsx for React components (`RecordingScreen.tsx`, `AudioPlayer.tsx`)
-- .test.ts/.test.tsx for test files alongside pattern
+- `snake_case.py` - Python modules (`transcription.py`, `test_sessions.py`)
+- `PascalCase.tsx` - React components (`RecordingScreen.tsx`, `AudioPlayer.tsx`)
+- `camelCase.ts` - TypeScript utilities/hooks (`useRecording.ts`, `formatting.ts`)
+- Test files: `test_*.py` for Python, none for TypeScript
 
 **Functions:**
-- snake_case for Python functions (`process_session`, `apply_corrections`)
-- camelCase for TypeScript/JavaScript (`startRecording`, `uploadChunk`)
-- handleEventName for React event handlers (`handleClick`, `handleSubmit`)
+- `snake_case` - Python functions (`apply_corrections`, `count_target_words`)
+- `camelCase` - TypeScript functions (`formatDuration`, `claimSpeaker`)
+- Async functions: No special prefix in either language
 
 **Variables:**
-- snake_case for Python (`session_id`, `word_counts`)
-- camelCase for TypeScript (`sessionId`, `isRecording`)
-- UPPER_SNAKE_CASE for constants in both (`TARGET_WORDS`, `API_URL`)
+- `snake_case` - Python variables
+- `camelCase` - TypeScript variables
+- `UPPER_SNAKE_CASE` - Constants (`CORRECTIONS`, `TARGET_WORDS`, `SAMPLE_RATE`)
+- `_underscore_prefix` - Private/internal in Python (`_model`, `_pipeline`)
 
 **Types:**
-- PascalCase for Python classes and TypeScript interfaces (`Session`, `SessionSpeaker`)
-- No I prefix for interfaces
-- Descriptive suffixes: `*Screen`, `*Service`, `*Props`
+- `PascalCase` - TypeScript interfaces and types (`Session`, `SpeakerSegment`)
+- `PascalCase` - Python dataclasses and Pydantic models (`SpeakerSegment`, `Settings`)
 
 ## Code Style
 
-**Formatting:**
-- No Prettier or ESLint config files detected - establish during hackathon
-- Recommended: 2-4 space indentation
-- Single quotes for TypeScript strings
-- Double quotes for Python strings
+**Python Formatting:**
+- Black-compatible style (though no config file present)
+- 4-space indentation
+- Double quotes for strings
+- Line length ~100 characters
+
+**TypeScript Formatting:**
+- Prettier with config in `mobile/package.json` format script
+- 2-space indentation
+- Single quotes for strings
+- Semicolons required
 
 **Linting:**
-- Not configured yet
-- Recommended: ESLint for TypeScript, pylint/ruff for Python
+- No ESLint config detected for mobile
+- No flake8/pylint config for backend
+- Type hints used extensively in Python (typing module)
 
 ## Import Organization
 
-**Python:**
-1. Standard library imports
-2. Third-party imports
-3. Local imports
+**Python Order:**
+1. Standard library (`os`, `logging`, `uuid`)
+2. Third-party packages (`fastapi`, `sqlalchemy`, `torch`)
+3. Local imports (`from config import settings`, `from models import Session`)
 
-**TypeScript:**
-1. External packages (react, react-native, expo)
-2. Internal modules (api/, hooks/, utils/)
-3. Relative imports (./, ../)
-4. Type imports
+**Python Patterns:**
+- Absolute imports within backend package
+- `from X import Y` style preferred over `import X`
 
-**Grouping:**
-- Blank line between groups
-- Alphabetical within each group recommended
+**TypeScript Order:**
+1. React/React Native (`import React from 'react'`)
+2. External packages (`@supabase/supabase-js`, `axios`)
+3. Local imports (`../components/`, `../hooks/`)
 
 ## Error Handling
 
-**Patterns:**
-- Python: Throw exceptions, catch at API boundary with HTTPException
-- TypeScript: Try/catch in async functions, error state in hooks
-- Return structured error responses from API
+**Python Patterns:**
+- Custom exceptions (`ProcessingError`)
+- Try/except at function boundaries
+- Logging before re-raising: `logger.error(f"Failed: {e}")`
+- Explicit error messages with context
+
+**TypeScript Patterns:**
+- Try/catch around API calls
+- Error state in React components
+- Alert.alert() for user-facing errors
 
 **Error Types:**
-- FastAPI HTTPException with status codes
-- Custom error messages for user-facing errors
-- Log errors with context before throwing
+- Raise on invalid state, missing dependencies
+- Log warnings for recoverable issues (continue processing)
+- Set model status to "failed" with error_message on critical failures
 
 ## Logging
 
 **Framework:**
-- Console logging (print statements in Python, console.log in TypeScript)
-- Consider structured logging for production
+- Python `logging` module
+- Logger per module: `logger = logging.getLogger(__name__)`
 
 **Patterns:**
-- Log at service boundaries
-- Include context (session_id, user_id) in logs
-- Log state transitions during processing
+- Emoji prefixes for visual scanning: `"Starting processing..."`, `"Diarization complete"`
+- Structured context: `f"Transcribing segment ({speaker_id}): {text[:50]}"`
+- Debug for verbose info, Info for progress, Warning for recoverable, Error for failures
+
+**Where:**
+- Log at service boundaries and major operations
+- Log durations for performance-sensitive operations
 
 ## Comments
 
 **When to Comment:**
-- File-level docstrings explaining purpose and responsibilities (already present)
-- Complex algorithms or business logic
-- Singlish word corrections dictionary explanations
-- API endpoint documentation
+- Module docstrings explaining PURPOSE, RESPONSIBILITIES, REFERENCES
+- Function docstrings for public APIs (Args, Returns, Raises)
+- Inline comments for complex algorithms or non-obvious decisions
+- Section headers with `# ======` separators
 
-**Docstrings:**
-- Multi-line docstrings for Python modules and functions
-- JSDoc-style comments for TypeScript
-- Document PURPOSE, RESPONSIBILITIES, REFERENCES, REFERENCED BY
+**Docstring Style:**
+- Python: Google-style docstrings
+- Purpose/Responsibilities at module level
+- Args/Returns/Raises for functions
 
-**TODO Comments:**
-- Format: `# TODO:` or `// TODO:`
-- Link to hackathon limitations documented in CLAUDE.md
+**Example:**
+```python
+"""
+services/transcription.py - MERaLiON Transcription Service
+
+PURPOSE:
+    Wrapper service for MERaLiON ASR speech-to-text model.
+    Transcribes Singlish audio segments to text.
+"""
+```
 
 ## Function Design
 
 **Size:**
 - Keep functions focused on single responsibility
-- Extract helpers for complex processing steps
+- Extract helpers for complex logic
+- Main pipeline functions can be longer (orchestration)
 
 **Parameters:**
-- Python: Use type hints for all parameters
-- TypeScript: Use TypeScript types/interfaces
-- Max 3-4 parameters, use objects for more
+- Use typed parameters with defaults where sensible
+- Pydantic models for complex input validation
+- Optional parameters with `Optional[Type] = None`
 
 **Return Values:**
-- Explicit return types in type hints
-- Return early for guard clauses
-- Structured responses from API endpoints
+- Explicit return types in Python (-> Type)
+- Return dataclasses or dicts for structured data
+- Raise exceptions for errors, don't return error codes
 
 ## Module Design
 
 **Exports:**
-- Python: All public functions at module level
-- TypeScript: Named exports preferred
-- Default exports for React components
+- No explicit `__all__` in most modules
+- Import what you need: `from services.transcription import transcribe_audio`
 
-**Structure:**
-- Each file has comprehensive header docstring
-- Clear separation of concerns between files
-- Services encapsulate external dependencies
+**Singletons:**
+- ML models use singleton pattern with locks for thread safety
+- Global `_model`, `_pipeline` variables with getter functions
+
+**Dependencies:**
+- Services depend on config, not on each other directly
+- Processor imports from services, not vice versa
+
+## React/TypeScript Patterns
+
+**Components:**
+- Functional components with hooks
+- Props interfaces defined above component
+- Default export for screens
+
+**Hooks:**
+- `use` prefix for custom hooks
+- Return objects/tuples with named values
+- Handle loading/error states internally
+
+**State Management:**
+- React Context for auth state (`AuthContext.tsx`)
+- Local state with useState for component-specific data
+- Polling with useEffect for server state
 
 ---
 
-*Convention analysis: 2026-01-17*
+*Convention analysis: 2026-01-18*
 *Update when patterns change*

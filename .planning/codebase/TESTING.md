@@ -1,241 +1,291 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-01-17
+**Analysis Date:** 2026-01-18
 
 ## Test Framework
 
-**Backend (Python):**
-- Runner: pytest with pytest-asyncio
-- Config: `backend/tests/conftest.py`
-- Location: `backend/tests/`
+**Runner:**
+- pytest 7.4+ (Python backend)
+- pytest-asyncio for async test support
+- Config: No explicit `pytest.ini` (uses defaults)
 
-**Mobile (TypeScript):**
-- Runner: Jest
-- Config: Referenced in `mobile/package.json`
-- Location: `mobile/__tests__/`
-- Utilities: @testing-library/react-native
+**Assertion Library:**
+- pytest built-in assert
+- Standard assert statements with descriptive messages
 
 **Run Commands:**
 ```bash
-# Backend
+# Backend tests
 cd backend
-pytest                              # Run all tests
-pytest tests/test_sessions.py       # Single file
-pytest -v                           # Verbose output
+pytest                           # Run all tests
+pytest tests/test_sessions.py    # Single file
+pytest -v                        # Verbose output
+pytest --tb=short                # Short traceback
 
-# Mobile
-cd mobile
-bun test                            # or npm test
-bun test -- --watch                 # Watch mode
-bun test path/to/file.test.ts      # Single file
+# With coverage (if pytest-cov installed)
+pytest --cov=. --cov-report=html
 ```
 
 ## Test File Organization
 
-**Backend:**
-- Location: `backend/tests/` (separate from source)
-- Naming: `test_*.py` (pytest discovery pattern)
-- Files:
-  - `conftest.py` - Shared fixtures
-  - `test_sessions.py` - Session endpoint tests
-  - `test_processing.py` - Processing pipeline tests
-  - `test_word_counting.py` - Word counting logic tests
+**Location:**
+- `backend/tests/` - Separate tests directory
+- `ml/tests/` - ML-specific tests
 
-**Mobile:**
-- Location: `mobile/__tests__/` (separate from source)
-- Naming: `*.test.ts` or `*.test.tsx`
-- Structure mirrors `src/`:
-  - `__tests__/hooks/useRecording.test.ts`
-  - `__tests__/screens/RecordingScreen.test.tsx`
-  - `__tests__/utils/formatting.test.ts`
+**Naming:**
+- `test_*.py` - Test files
+- `conftest.py` - Shared fixtures
 
 **Structure:**
 ```
 backend/
-  tests/
-    __init__.py
-    conftest.py
-    test_sessions.py
-    test_processing.py
-    test_word_counting.py
-
-mobile/
-  __tests__/
-    hooks/
-      useRecording.test.ts
-    screens/
-      RecordingScreen.test.tsx
-      ClaimingScreen.test.tsx
-    utils/
-      formatting.test.ts
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py           # Fixtures: db, mock services
+│   ├── test_sessions.py      # Session endpoint tests
+│   ├── test_word_counting.py # Singlish word counting
+│   ├── test_transcription.py # Transcription service
+│   ├── test_transcription_unit.py  # Unit tests
+│   └── test_processing.py    # Processing pipeline
+├── services/
+│   └── transcription.py
+└── processor.py
 ```
 
 ## Test Structure
 
-**Python (pytest):**
+**Suite Organization:**
 ```python
-"""Test module docstring"""
+import pytest
+from unittest.mock import patch, MagicMock
 
-def test_create_session_success(client, db):
-    # Arrange
-    payload = {"group_id": "...", "started_by": "..."}
+class TestWordCounting:
+    """Tests for Singlish word counting logic."""
 
-    # Act
-    response = client.post("/sessions/start", json=payload)
+    def test_counts_single_word(self):
+        """Should count a single occurrence of target word."""
+        # arrange
+        text = "This food is shiok lah"
 
-    # Assert
-    assert response.status_code == 200
-    assert response.json()["status"] == "recording"
+        # act
+        from services.transcription import count_target_words
+        counts = count_target_words(text)
 
+        # assert
+        assert counts.get("shiok") == 1
+        assert counts.get("lah") == 1
 
-def test_create_session_invalid_group(client):
-    # Test error case
-    response = client.post("/sessions/start", json={"group_id": "invalid"})
-    assert response.status_code == 422
-```
+    def test_applies_corrections(self):
+        """Should correct common ASR mistakes."""
+        text = "Wah lao this is so good"
 
-**TypeScript (Jest):**
-```typescript
-describe('useRecording', () => {
-  describe('initial state', () => {
-    it('should have isRecording as false', () => {
-      const { result } = renderHook(() => useRecording());
-      expect(result.current.isRecording).toBe(false);
-    });
-  });
+        from services.transcription import apply_corrections
+        corrected = apply_corrections(text)
 
-  describe('startRecording', () => {
-    it('should create session via API', async () => {
-      // Test implementation
-    });
-  });
-});
+        assert "walao" in corrected.lower()
 ```
 
 **Patterns:**
+- Class-based grouping for related tests
+- Descriptive test method names (`test_should_X_when_Y`)
 - Arrange/Act/Assert structure
-- Descriptive test names (test_* or should *)
-- One assertion focus per test
-- Use fixtures for common setup
+- Docstrings explaining test purpose
 
 ## Mocking
 
-**Python (pytest):**
+**Framework:**
+- `unittest.mock` (patch, MagicMock, AsyncMock)
+- Fixtures in `conftest.py` for common mocks
+
+**Patterns:**
 ```python
-# conftest.py
+# conftest.py fixtures
 @pytest.fixture
-def mock_s3(mocker):
-    return mocker.patch('storage.s3_client')
+def mock_storage():
+    """Mock storage service."""
+    with patch("processor.storage") as mock:
+        mock.get_public_url = MagicMock(
+            side_effect=lambda path: f"https://storage.example.com/{path}"
+        )
+        mock.upload_processed_audio = AsyncMock(
+            side_effect=lambda session_id, content, filename: f"sessions/{session_id}/{filename}"
+        )
+        yield mock
 
 @pytest.fixture
-def mock_redis(mocker):
-    return mocker.patch('worker.redis_client')
+def mock_diarization():
+    """Mock diarization service."""
+    from services.diarization import SpeakerSegment
 
-@pytest.fixture
-def mock_firebase(mocker):
-    return mocker.patch('services.firebase.get_firebase_app')
-```
+    mock_segments = [
+        SpeakerSegment(speaker_id="SPEAKER_00", start_time=0.0, end_time=5.0),
+        SpeakerSegment(speaker_id="SPEAKER_01", start_time=5.5, end_time=10.0),
+    ]
 
-**TypeScript (Jest):**
-```typescript
-// Mock modules
-jest.mock('../api/client');
-jest.mock('expo-av');
-
-// Mock in test
-const mockUploadChunk = jest.mocked(client.uploadChunk);
-mockUploadChunk.mockResolvedValue({ uploaded: true });
+    with patch("processor.diarize_audio") as mock:
+        mock.return_value = mock_segments
+        yield mock, mock_segments
 ```
 
 **What to Mock:**
-- External services: S3, Firebase, Redis
-- ML models: pyannote, MERaLiON (for unit tests)
-- Expo native modules: expo-av Audio
-- Network calls
+- External services (Supabase storage, HuggingFace models)
+- Database (use in-memory SQLite)
+- Audio processing (return fake bytes)
+- Network calls (use AsyncMock for httpx)
 
 **What NOT to Mock:**
 - Pure functions (word counting, corrections)
-- Internal utility functions
 - Data transformations
+- Schema validation
 
 ## Fixtures and Factories
 
-**Python Fixtures (`conftest.py`):**
-- `client` - FastAPI TestClient
-- `db` - Test database session
-- `mock_s3`, `mock_redis`, `mock_firebase` - Mocked services
-- `sample_session` - Pre-created session
-- `sample_audio` - Sample audio bytes
-- `sample_transcription` - Sample text with Singlish words
+**Test Data:**
+```python
+# conftest.py
+@pytest.fixture
+def sample_user(db):
+    """Create a sample user profile."""
+    user = Profile(
+        id=uuid.uuid4(),
+        username="testuser",
+        display_name="Test User",
+    )
+    db.add(user)
+    db.commit()
+    return user
 
-**TypeScript:**
-- Factory functions in test files
-- Shared test data in `__tests__/fixtures/` if needed
+@pytest.fixture
+def sample_session(db, sample_user, sample_group):
+    """Create a sample recording session."""
+    session = Session(
+        id=uuid.uuid4(),
+        group_id=sample_group.id,
+        started_by=sample_user.id,
+        status="recording",
+        progress=0,
+    )
+    db.add(session)
+    db.commit()
+    return session
+
+# Test data constants
+SAMPLE_TRANSCRIPTION = """
+Wah this mala damn shiok sia!
+Cannot lor, I got other things.
+Walao eh the traffic today really jialat.
+"""
+
+EXPECTED_WORD_COUNTS = {
+    "wah": 1,
+    "shiok": 1,
+    "sia": 1,
+    "cannot": 1,
+    "lor": 1,
+    "walao": 1,
+    "jialat": 1,
+}
+```
+
+**Location:**
+- Fixtures: `backend/tests/conftest.py`
+- Test constants: In conftest.py or individual test files
 
 ## Coverage
 
 **Requirements:**
-- No enforced coverage target (hackathon)
-- Focus on critical paths: session lifecycle, word counting, claiming
+- No enforced coverage target
+- Coverage tracked for awareness
+
+**Configuration:**
+- pytest-cov plugin (if installed)
+- No specific exclusions configured
 
 **View Coverage:**
 ```bash
-# Backend
 pytest --cov=. --cov-report=html
 open htmlcov/index.html
-
-# Mobile
-bun test -- --coverage
 ```
 
 ## Test Types
 
 **Unit Tests:**
-- Scope: Single function/module in isolation
-- Mocking: All external dependencies
-- Examples: `test_word_counting.py`, `useRecording.test.ts`
+- Test single functions in isolation
+- Mock all external dependencies
+- Files: `test_word_counting.py`, `test_transcription_unit.py`
+- Fast: Should run in milliseconds
 
 **Integration Tests:**
-- Scope: Multiple modules together
-- Mocking: External services only
-- Examples: `test_sessions.py` (endpoint + database)
+- Test multiple components together
+- Use in-memory SQLite database
+- Mock external services (storage, ML models)
+- Files: `test_sessions.py`, `test_processing.py`
 
 **E2E Tests:**
-- Not implemented yet
-- Manual testing for hackathon
+- Not present in codebase
+- Manual testing via scripts: `test_api.py`, `test_ml_pipeline.py`
 
 ## Common Patterns
 
-**Async Testing (Python):**
+**Async Testing:**
 ```python
+import pytest
+
 @pytest.mark.asyncio
-async def test_process_session():
-    result = await process_session(session_id)
-    assert result.status == 'completed'
+async def test_async_operation():
+    result = await async_function()
+    assert result == expected
 ```
 
-**Async Testing (TypeScript):**
-```typescript
-it('should handle async operation', async () => {
-  const result = await asyncFunction();
-  expect(result).toBe('expected');
-});
-```
-
-**Error Testing:**
+**Database Testing:**
 ```python
-def test_invalid_input_raises():
-    with pytest.raises(ValueError):
-        invalid_function(None)
+@pytest.fixture
+def db_engine():
+    """Create test database engine."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    yield engine
+    Base.metadata.drop_all(bind=engine)
+
+@pytest.fixture
+def db(db_engine):
+    """Create test database session."""
+    TestingSessionLocal = sessionmaker(bind=db_engine)
+    session = TestingSessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
 ```
 
-```typescript
-it('should throw on invalid input', async () => {
-  await expect(asyncCall()).rejects.toThrow('error message');
-});
+**Environment Setup:**
+```python
+# Set test environment variables BEFORE importing config
+os.environ["SUPABASE_URL"] = "https://test-project.supabase.co"
+os.environ["SUPABASE_JWT_SECRET"] = "test-jwt-secret"
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 ```
+
+**Snapshot Testing:**
+- Not used in this codebase
+- Prefer explicit assertions
+
+## Mobile Testing
+
+**Status:**
+- No automated tests for React Native
+- Manual testing via Expo
+
+**Potential Setup:**
+- Jest for unit tests
+- React Native Testing Library for component tests
+- Detox for E2E
 
 ---
 
-*Testing analysis: 2026-01-17*
+*Testing analysis: 2026-01-18*
 *Update when test patterns change*

@@ -1,90 +1,102 @@
 # Technology Stack
 
-**Analysis Date:** 2026-01-17
+**Analysis Date:** 2026-01-18
 
 ## Languages
 
 **Primary:**
-- Python 3.x - Backend API, ML pipeline, audio processing (`backend/`, `ml/`)
-- TypeScript - Mobile app and frontend components (`mobile/src/`)
+- Python 3.10+ - Backend API and ML pipeline (`backend/`, `ml/`)
+- TypeScript 5.3 - Mobile app (`mobile/src/`)
 
 **Secondary:**
-- JavaScript - Configuration, scripts (`deploy.sh`, package.json scripts)
-- SQL - Database migrations (`backend/alembic/`)
+- JavaScript - React Native build tooling, Babel config
+- Shell - Deployment scripts (`deploy.sh`)
 
 ## Runtime
 
 **Environment:**
-- Python 3.x (Backend API, ML processing)
-- Node.js (React Native mobile app via Expo)
-- Expo SDK (Mobile development framework)
+- Python 3.10+ - Backend services
+- Node.js 18.x+ - React Native/Expo development
+- CUDA (optional) - GPU acceleration for ML models
 
 **Package Manager:**
-- pip - Python dependencies (`backend/requirements.txt`, `ml/requirements.txt`)
-- Bun/npm - JavaScript dependencies (`mobile/package.json`)
+- pip (Python) - `backend/requirements.txt`, `ml/requirements.txt`
+- npm/bun - `mobile/package.json`
+
+**Lockfiles:**
+- None for Python (requirements.txt only)
+- `mobile/package-lock.json` present
 
 ## Frameworks
 
 **Core:**
-- FastAPI - Python web framework for backend API (`backend/main.py`)
-- React Native + Expo - Mobile app framework (`mobile/`)
-- SQLAlchemy - Python ORM for database access (`backend/database.py`, `backend/models.py`)
+- FastAPI 0.109+ - Backend REST API (`backend/main.py`)
+- React Native 0.73.6 - Mobile app (`mobile/`)
+- Expo 50.0 - Mobile development platform
+
+**ML/AI:**
+- transformers 4.36+ - MERaLiON ASR model (`backend/services/transcription.py`)
+- pyannote.audio 3.1+ - Speaker diarization (`backend/services/diarization.py`)
+- torch 2.0+ - Deep learning framework
 
 **Testing:**
-- pytest / pytest-asyncio - Python backend tests (`backend/tests/`)
-- Jest - JavaScript/TypeScript tests (`mobile/__tests__/`)
-- @testing-library/react-native - React Native component testing
+- pytest 7.4+ - Python backend tests (`backend/tests/`)
+- pytest-asyncio - Async test support
 
 **Build/Dev:**
-- uvicorn - ASGI server for FastAPI (`backend/main.py`)
-- Alembic - Database migrations (`backend/alembic/`)
-- Expo CLI - Mobile development tooling
+- uvicorn - ASGI server for FastAPI
+- Babel - React Native transpilation
+- Expo CLI - Mobile development
 
 ## Key Dependencies
 
-**Critical:**
-- transformers - HuggingFace library for MERaLiON ASR model (`backend/services/transcription.py`)
-- pyannote.audio - Speaker diarization model (`backend/services/diarization.py`)
-- torch - PyTorch for ML inference (`backend/requirements.txt`)
-- expo-av - Audio recording/playback in mobile app (`mobile/src/hooks/useRecording.ts`)
+**Critical (Backend):**
+- `fastapi` - REST API framework (`backend/main.py`)
+- `transformers` - HuggingFace models for MERaLiON (`backend/services/transcription.py`)
+- `pyannote.audio` - Speaker diarization (`backend/services/diarization.py`)
+- `sqlalchemy` - ORM for database (`backend/database.py`)
+- `pydub` - Audio processing (`backend/processor.py`)
+
+**Critical (Mobile):**
+- `@supabase/supabase-js` - Auth and real-time (`mobile/src/lib/supabase.ts`)
+- `expo-av` - Audio recording (`mobile/src/hooks/useRecording.ts`)
+- `@react-navigation/*` - Navigation (`mobile/src/navigation/`)
+- `axios` - HTTP client (`mobile/src/api/client.ts`)
 
 **Infrastructure:**
-- redis - Job queue for background processing (`backend/worker.py`)
-- psycopg2-binary - PostgreSQL client (`backend/database.py`)
-- boto3 - AWS S3 storage client (`backend/storage.py`)
-- firebase-admin - Firebase Realtime Database (`backend/services/firebase.py`)
-- @react-navigation/native - Mobile navigation (`mobile/src/screens/`)
-
-**Audio Processing:**
-- librosa - Audio loading and processing (`backend/requirements.txt`)
-- soundfile - Audio file I/O (`backend/requirements.txt`)
-- pydub - Audio manipulation (`backend/requirements.txt`)
+- `psycopg2-binary` - PostgreSQL driver
+- `redis` - Background job queue
+- `boto3` - AWS S3 storage
+- `firebase-admin` - Real-time updates (optional)
 
 ## Configuration
 
 **Environment:**
-- .env files - Environment variables (`backend/.env.example`, `mobile/.env.example`)
-- Key configs: DATABASE_URL, REDIS_URL, S3_BUCKET, AWS credentials, HUGGINGFACE_TOKEN, FIREBASE credentials
+- `.env` files for secrets (gitignored)
+- `backend/config.py` - Pydantic Settings for typed config
+- Required: `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `HUGGINGFACE_TOKEN`
+- Optional: `TRANSCRIPTION_API_URL` for external Colab notebook
 
 **Build:**
-- No tsconfig.json detected yet - placeholder structure
-- Alembic for database migrations (`backend/alembic/`)
+- `mobile/tsconfig.json` - TypeScript configuration
+- `mobile/babel.config.js` - Babel/React Native
+- `backend/alembic/` - Database migrations
 
 ## Platform Requirements
 
 **Development:**
-- macOS/Linux/Windows with Python 3.x and Node.js
-- Docker for Redis and PostgreSQL (`docker-compose.yml`)
-- GPU recommended for ML model inference
+- Windows/macOS/Linux
+- Python 3.10+, Node.js 18+
+- Docker for Redis (optional)
+- FFmpeg for audio processing (pydub dependency)
 
 **Production:**
-- Docker containers or cloud deployment
-- PostgreSQL database
+- Linux server with GPU (recommended for ML)
+- Supabase (PostgreSQL + Auth + Storage)
 - Redis for job queue
-- AWS S3 for audio storage
-- Firebase Realtime Database for live sync
+- 16GB+ RAM for ML models
 
 ---
 
-*Stack analysis: 2026-01-17*
+*Stack analysis: 2026-01-18*
 *Update after major dependency changes*

@@ -1,183 +1,193 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-01-17
+**Analysis Date:** 2026-01-18
 
 ## Directory Layout
 
 ```
 Hack-Roll/
-├── backend/                # Python FastAPI backend
-│   ├── routers/           # API endpoint definitions
-│   ├── services/          # Business logic services
-│   ├── tests/             # pytest test suite
-│   └── alembic/           # Database migrations
-├── mobile/                 # React Native + Expo mobile app
+├── backend/                    # FastAPI backend API
+│   ├── routers/               # API route handlers
+│   ├── services/              # Business logic & ML services
+│   ├── tests/                 # Pytest test files
+│   ├── alembic/               # Database migrations
+│   ├── main.py                # FastAPI app entry point
+│   ├── processor.py           # Audio processing pipeline
+│   ├── worker.py              # Background job worker
+│   ├── models.py              # SQLAlchemy ORM models
+│   ├── schemas.py             # Pydantic request/response
+│   ├── database.py            # DB connection
+│   ├── config.py              # Settings management
+│   ├── storage.py             # Supabase Storage wrapper
+│   ├── auth.py                # JWT validation
+│   └── requirements.txt       # Python dependencies
+│
+├── mobile/                     # React Native app
 │   ├── src/
-│   │   ├── screens/       # Screen components
-│   │   ├── components/    # Reusable UI components
-│   │   ├── hooks/         # Custom React hooks
-│   │   ├── api/           # API client
-│   │   └── utils/         # Utility functions
-│   └── __tests__/         # Jest test files
-├── ml/                     # ML training pipeline (optional)
-│   ├── scripts/           # Training and evaluation scripts
-│   └── tests/             # ML tests
-├── scripts/                # Utility scripts
-├── docs/                   # Documentation
-├── .planning/              # Planning documents
-│   └── codebase/          # This codebase map
-├── CLAUDE.md               # Project instructions
-├── docker-compose.yml      # Local dev services
-└── deploy.sh               # Deployment script
+│   │   ├── screens/           # App screens (Recording, Claiming, etc.)
+│   │   ├── components/        # Reusable UI components
+│   │   ├── hooks/             # Custom React hooks
+│   │   ├── contexts/          # React contexts (Auth)
+│   │   ├── navigation/        # React Navigation setup
+│   │   ├── api/               # API client
+│   │   ├── lib/               # Supabase client
+│   │   ├── types/             # TypeScript types
+│   │   └── utils/             # Utility functions
+│   ├── App.tsx                # Root component
+│   ├── package.json           # Node dependencies
+│   └── tsconfig.json          # TypeScript config
+│
+├── ml/                         # ML training scripts
+│   ├── scripts/               # Training & evaluation
+│   ├── tests/                 # ML tests
+│   └── requirements.txt       # ML dependencies
+│
+├── scripts/                    # Utility scripts
+│   ├── test_meralion.py       # Model testing
+│   └── test_pyannote.py       # Diarization testing
+│
+├── .planning/                  # Project planning docs
+│   └── codebase/              # This codebase map
+│
+├── docs/                       # Documentation
+├── instructions/               # Project instructions
+├── CLAUDE.md                   # Claude instructions
+├── TASKS.md                    # Task tracking
+└── README.md                   # Project README
 ```
 
 ## Directory Purposes
 
 **backend/**
-- Purpose: Python FastAPI backend API and processing
-- Contains: API endpoints, services, models, tests
-- Key files: `main.py` (entry point), `processor.py` (audio pipeline), `models.py` (database models)
-- Subdirectories: `routers/` (endpoints), `services/` (business logic), `tests/` (pytest), `alembic/` (migrations)
+- Purpose: Python FastAPI backend API
+- Contains: All server-side code for REST API and processing
+- Key files: `main.py` (entry), `processor.py` (pipeline), `models.py` (DB)
+- Subdirectories: `routers/`, `services/`, `tests/`, `alembic/`
 
 **backend/routers/**
-- Purpose: API endpoint definitions
-- Contains: `sessions.py` (session CRUD), `groups.py` (group stats)
-- Key files: `sessions.py` - main session lifecycle endpoints
+- Purpose: API endpoint handlers
+- Contains: `auth.py`, `groups.py`, `sessions.py`, `stats.py`
+- Key files: `sessions.py` - recording/claiming endpoints
 
 **backend/services/**
-- Purpose: Business logic and external service integrations
-- Contains: `diarization.py` (pyannote), `transcription.py` (MERaLiON), `firebase.py` (real-time sync)
-- Key files: All three services are critical to processing
+- Purpose: ML services and business logic
+- Contains: Transcription, diarization, Firebase, caching
+- Key files: `transcription.py`, `diarization.py`, `transcription_cache.py`
 
 **backend/tests/**
-- Purpose: Backend test suite
-- Contains: pytest tests for endpoints and processing
-- Key files: `conftest.py` (fixtures), `test_sessions.py` (endpoint tests)
+- Purpose: Backend unit and integration tests
+- Contains: Pytest test files and fixtures
+- Key files: `conftest.py` (fixtures), `test_sessions.py`, `test_word_counting.py`
 
-**mobile/**
-- Purpose: React Native mobile application
-- Contains: Expo project with TypeScript
-- Key files: `package.json`, `src/` directory
-- Subdirectories: `src/screens/`, `src/components/`, `src/hooks/`, `src/api/`, `src/utils/`
+**mobile/src/**
+- Purpose: React Native application source
+- Contains: All mobile app code
+- Subdirectories: `screens/`, `components/`, `hooks/`, `contexts/`, `navigation/`
 
 **mobile/src/screens/**
-- Purpose: Main application screens
-- Contains: Screen components for each flow
-- Key files: `RecordingScreen.tsx`, `ProcessingScreen.tsx`, `ClaimingScreen.tsx`, `ResultsScreen.tsx`, `StatsScreen.tsx`, `WrappedScreen.tsx`
+- Purpose: App screens (views)
+- Contains: Recording, Processing, Claiming, Results, Wrapped, Auth screens
+- Key files: `RecordingScreen.tsx`, `ClaimingScreen.tsx`, `WrappedScreen.tsx`
 
 **mobile/src/hooks/**
-- Purpose: Custom React hooks for state management
-- Contains: Recording, playback, session status hooks
-- Key files: `useRecording.ts`, `useAudioPlayback.ts`, `useSessionStatus.ts`
-
-**mobile/src/api/**
-- Purpose: Backend API client
-- Contains: `client.ts` - centralized API communication
-- Key files: `client.ts`
+- Purpose: Custom React hooks
+- Contains: Recording logic, session status polling, audio playback
+- Key files: `useRecording.ts`, `useSessionStatus.ts`, `useAudioPlayback.ts`
 
 **ml/**
-- Purpose: Optional ML training pipeline
-- Contains: Training scripts, evaluation, data processing
-- Key files: `scripts/prepare_imda_data.py`, `scripts/train_lora.py`, `scripts/evaluate.py`
-- Note: Not required for hackathon - using pre-trained models
-
-**scripts/**
-- Purpose: Utility and test scripts
-- Contains: Model testing scripts
-- Key files: `test_meralion.py`, `test_pyannote.py`
+- Purpose: ML model training and evaluation (separate from backend)
+- Contains: LoRA fine-tuning scripts, data preparation
+- Key files: `scripts/train_lora.py`, `scripts/evaluate.py`
 
 ## Key File Locations
 
 **Entry Points:**
-- `backend/main.py` - FastAPI API server entry
-- `backend/worker.py` - Background job worker
-- `mobile/` - Expo app entry (via Expo)
+- `backend/main.py` - FastAPI server startup
+- `backend/worker.py` - Background processing worker
+- `mobile/App.tsx` - React Native app root
 
 **Configuration:**
-- `backend/.env.example` - Backend environment template
-- `mobile/.env.example` - Mobile environment template
-- `backend/config.py` - Configuration loading
-- `docker-compose.yml` - Local dev services
+- `backend/config.py` - Backend settings (Pydantic)
+- `backend/.env` - Environment variables (gitignored)
+- `mobile/tsconfig.json` - TypeScript config
+- `mobile/package.json` - Node dependencies
 
 **Core Logic:**
 - `backend/processor.py` - Audio processing pipeline
-- `backend/services/diarization.py` - Speaker segmentation
-- `backend/services/transcription.py` - Speech-to-text
-- `backend/models.py` - Database models
-- `mobile/src/hooks/useRecording.ts` - Recording logic
+- `backend/services/transcription.py` - MERaLiON ASR + corrections
+- `backend/services/diarization.py` - pyannote speaker segmentation
+- `backend/models.py` - Database models (Session, Profile, Group)
 
 **Testing:**
-- `backend/tests/` - Python tests (pytest)
-- `mobile/__tests__/` - Mobile tests (Jest)
+- `backend/tests/conftest.py` - Pytest fixtures
+- `backend/tests/test_sessions.py` - Session endpoint tests
+- `backend/tests/test_word_counting.py` - Singlish word counting tests
 
 **Documentation:**
-- `CLAUDE.md` - Project instructions and architecture
-- `docs/` - Additional documentation
+- `CLAUDE.md` - Project instructions for Claude
 - `README.md` - Project overview
+- `docs/` - Additional documentation
 
 ## Naming Conventions
 
 **Files:**
-- snake_case.py - Python files (main.py, processor.py)
-- camelCase.ts/tsx - TypeScript files (useRecording.ts)
-- PascalCase.tsx - React components (RecordingScreen.tsx)
-- kebab-case for directories in some places
+- `snake_case.py` - Python modules
+- `PascalCase.tsx` - React components
+- `camelCase.ts` - TypeScript utilities/hooks
+- `*.test.py` - Python test files
 
 **Directories:**
-- lowercase - All directories (backend/, mobile/, scripts/)
-- Plural for collections (routers/, services/, screens/, hooks/)
+- lowercase singular/plural - `backend/`, `routers/`, `services/`
+- kebab-case for planning - `.planning/`
 
 **Special Patterns:**
 - `__init__.py` - Python package markers
-- `.test.ts` / `.test.tsx` - Test files
-- `.example` - Template files (.env.example)
+- `conftest.py` - Pytest configuration
+- `index.ts` - Module barrel exports (not used heavily)
 
 ## Where to Add New Code
 
 **New API Endpoint:**
-- Router: `backend/routers/{name}.py`
-- Register in: `backend/main.py`
-- Tests: `backend/tests/test_{name}.py`
+- Router: `backend/routers/{domain}.py`
+- Schemas: `backend/schemas.py`
+- Tests: `backend/tests/test_{domain}.py`
 
-**New Service:**
-- Implementation: `backend/services/{name}.py`
-- Tests: `backend/tests/test_{name}.py` or in existing test files
+**New ML Service:**
+- Implementation: `backend/services/{service_name}.py`
+- Import in: `backend/processor.py`
 
 **New Mobile Screen:**
-- Screen: `mobile/src/screens/{Name}Screen.tsx`
-- Register in navigation config
-- Tests: `mobile/__tests__/screens/{Name}Screen.test.tsx`
+- Screen: `mobile/src/screens/{ScreenName}Screen.tsx`
+- Navigation: Update `mobile/src/navigation/MainNavigator.tsx`
+
+**New Mobile Component:**
+- Component: `mobile/src/components/{ComponentName}.tsx`
 
 **New Hook:**
-- Implementation: `mobile/src/hooks/use{Name}.ts`
-- Tests: `mobile/__tests__/hooks/use{Name}.test.ts`
+- Hook: `mobile/src/hooks/use{HookName}.ts`
 
-**New Component:**
-- Implementation: `mobile/src/components/{Name}.tsx`
-- Tests: `mobile/__tests__/components/{Name}.test.tsx`
-
-**Utilities:**
-- Backend: `backend/` (no dedicated utils dir yet)
-- Mobile: `mobile/src/utils/`
+**Database Migration:**
+- Create: `alembic revision --autogenerate -m "description"`
+- Location: `backend/alembic/versions/`
 
 ## Special Directories
 
-**.planning/**
-- Purpose: Project planning and codebase documentation
-- Source: Generated by planning workflows
-- Committed: Yes
-
 **backend/alembic/**
-- Purpose: Database migrations
-- Source: Generated by `alembic revision`
-- Committed: Yes
+- Purpose: Database migration scripts
+- Source: Generated by Alembic CLI
+- Committed: Yes (migration history)
 
-**ml/outputs/**
-- Purpose: Trained model outputs (if fine-tuning)
-- Source: Generated by training scripts
-- Committed: No (add to .gitignore)
+**.worktrees/**
+- Purpose: Git worktrees for parallel development
+- Source: Created by `git worktree add`
+- Committed: No (gitignored, local development)
+
+**mobile/node_modules/**
+- Purpose: Node.js dependencies
+- Source: Installed by npm/bun
+- Committed: No (gitignored)
 
 ---
 
-*Structure analysis: 2026-01-17*
+*Structure analysis: 2026-01-18*
 *Update when directory structure changes*
