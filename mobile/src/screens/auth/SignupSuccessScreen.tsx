@@ -5,7 +5,9 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
+  SafeAreaView,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
 
@@ -47,56 +49,69 @@ export default function SignupSuccessScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={styles.container}>
-      <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-        {/* Success Icon */}
-        <View style={styles.iconContainer}>
-          <Text style={styles.checkmark}>✓</Text>
+    <LinearGradient
+      colors={['#6B1B1B', '#A64545']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+      style={styles.container}
+    >
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.wrapper}>
+          <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
+            {/* Success Icon */}
+            <View style={styles.iconContainer}>
+              <Text style={styles.checkmark}>✓</Text>
+            </View>
+
+            {/* Success Message */}
+            <Text style={styles.title}>Account Created!</Text>
+            <Text style={styles.subtitle}>
+              Welcome to LahStats!
+            </Text>
+
+            {/* Email Verification Message */}
+            <View style={styles.messageBox}>
+              <Text style={styles.messageTitle}>Check Your Email</Text>
+              <Text style={styles.messageText}>
+                We've sent you a verification email.{'\n'}
+                Please check your inbox and click the{'\n'}
+                verification link to activate your account.
+              </Text>
+            </View>
+
+            {/* Info Text */}
+            <Text style={styles.infoText}>
+              Didn't receive the email? Check your spam folder.
+            </Text>
+
+            {/* Countdown */}
+            <Text style={styles.countdown}>
+              Redirecting to sign in in {countdown}s...
+            </Text>
+
+            {/* Manual Button */}
+            <TouchableOpacity 
+              style={styles.button}
+              onPress={handleGoToLogin}
+            >
+              <Text style={styles.buttonText}>Go to Sign In</Text>
+            </TouchableOpacity>
+          </Animated.View>
         </View>
-
-        {/* Success Message */}
-        <Text style={styles.title}>Account Created!</Text>
-        <Text style={styles.subtitle}>
-          Welcome to LahStats! 🎉
-        </Text>
-
-        {/* Email Verification Message */}
-        <View style={styles.messageBox}>
-          <Text style={styles.messageIcon}>📧</Text>
-          <Text style={styles.messageTitle}>Check Your Email</Text>
-          <Text style={styles.messageText}>
-            We've sent you a verification email.{'\n'}
-            Please check your inbox and click the{'\n'}
-            verification link to activate your account.
-          </Text>
-        </View>
-
-        {/* Info Text */}
-        <Text style={styles.infoText}>
-          Didn't receive the email? Check your spam folder.
-        </Text>
-
-        {/* Countdown */}
-        <Text style={styles.countdown}>
-          Redirecting to sign in in {countdown}s...
-        </Text>
-
-        {/* Manual Button */}
-        <TouchableOpacity 
-          style={styles.button}
-          onPress={handleGoToLogin}
-        >
-          <Text style={styles.buttonText}>Go to Sign In</Text>
-        </TouchableOpacity>
-      </Animated.View>
-    </View>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+  },
+  safeArea: {
+    flex: 1,
+  },
+  wrapper: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -110,11 +125,11 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#34C759',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 32,
-    shadowColor: '#34C759',
+    shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 4,
@@ -125,69 +140,67 @@ const styles = StyleSheet.create({
   },
   checkmark: {
     fontSize: 60,
-    color: '#fff',
+    color: '#6B1B1B',
     fontWeight: 'bold',
   },
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#000',
+    color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 18,
-    color: '#666',
+    color: 'rgba(255, 255, 255, 0.8)',
     textAlign: 'center',
     marginBottom: 32,
   },
   messageBox: {
-    backgroundColor: '#F2F2F7',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
     borderRadius: 16,
     padding: 24,
     width: '100%',
     alignItems: 'center',
     marginBottom: 24,
   },
-  messageIcon: {
-    fontSize: 48,
-    marginBottom: 12,
-  },
   messageTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#000',
+    color: '#FFFFFF',
     marginBottom: 12,
     textAlign: 'center',
   },
   messageText: {
     fontSize: 15,
-    color: '#666',
+    color: 'rgba(255, 255, 255, 0.8)',
     textAlign: 'center',
     lineHeight: 22,
   },
   infoText: {
     fontSize: 13,
-    color: '#999',
+    color: 'rgba(255, 255, 255, 0.6)',
     textAlign: 'center',
     marginBottom: 24,
     fontStyle: 'italic',
   },
   countdown: {
     fontSize: 14,
-    color: '#007AFF',
+    color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: 16,
     fontWeight: '500',
   },
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#FFFFFF',
     paddingVertical: 16,
     paddingHorizontal: 32,
     borderRadius: 12,
     width: '100%',
     alignItems: 'center',
-    shadowColor: '#007AFF',
+    shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 2,
@@ -197,7 +210,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   buttonText: {
-    color: '#fff',
+    color: '#6B1B1B',
     fontSize: 16,
     fontWeight: '600',
   },

@@ -47,7 +47,9 @@ export default function WrappedScreen({ navigation, route }: Props) {
 
   return (
     <LinearGradient
-      colors={['#F29D9D', '#F5A8A8']}
+      colors={['#6B1B1B', '#A64545']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
       style={styles.container}
     >
       <SafeAreaView style={styles.safeArea}>

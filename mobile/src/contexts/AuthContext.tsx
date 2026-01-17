@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { Profile, Group, AuthContextType } from '../types/auth';
-import { api, clearSessionCache } from '../api/client';
+import { api, clearSessionCache, updateSessionCache } from '../api/client';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -45,6 +45,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session?.user ?? null);
         
         if (session) {
+          // Update API session cache
+          if (session.access_token && session.expires_at) {
+            updateSessionCache(session.access_token, session.expires_at);
+          }
           await fetchProfile();
         } else {
           // No session - show login screen immediately
@@ -91,6 +95,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session?.user ?? null);
         
         if (session) {
+          // Update API session cache
+          if (session.access_token && session.expires_at) {
+            updateSessionCache(session.access_token, session.expires_at);
+          }
           await fetchProfile();
         } else {
           console.log('No session - clearing state and setting loading=false');

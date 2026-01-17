@@ -5,11 +5,22 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
 // Cache for the current session to avoid multiple concurrent getSession calls
 let sessionCache: { token: string | null, expiresAt: number } = { token: null, expiresAt: 0 };
+let pendingSessionFetch: Promise<any> | null = null;
 
 // Function to clear the session cache (call on sign out)
 export const clearSessionCache = () => {
   sessionCache = { token: null, expiresAt: 0 };
+  pendingSessionFetch = null;
 };
+
+// Update cache externally (called on login/auth state change)
+export function updateSessionCache(token: string, expiresAt: number) {
+  sessionCache = {
+    token,
+    expiresAt: expiresAt * 1000 - 5 * 60 * 1000 // 5 min buffer
+  };
+  console.log('Session cache updated externally');
+}
 
 export const axiosInstance: AxiosInstance = axios.create({
   baseURL: API_URL,
@@ -33,13 +44,19 @@ axiosInstance.interceptors.request.use(
       // Fetch new session if cache is invalid
       console.log('Fetching new session token...');
       
-      // Add timeout to getSession call to prevent hanging
-      const sessionPromise = supabase.auth.getSession();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('getSession timeout')), 3000)
-      );
+      // Reuse pending fetch if one is already in progress
+      if (!pendingSessionFetch) {
+        pendingSessionFetch = Promise.race([
+          supabase.auth.getSession(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('getSession timeout')), 10000) // 10 second timeout
+          )
+        ]).finally(() => {
+          pendingSessionFetch = null;
+        });
+      }
       
-      const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]) as any;
+      const { data: { session } } = await pendingSessionFetch as any;
 
       if (session?.access_token) {
         // Cache the token with a 5-minute expiry buffer
@@ -50,10 +67,9 @@ axiosInstance.interceptors.request.use(
         config.headers.Authorization = `Bearer ${session.access_token}`;
         console.log('Token added to request');
       } else {
-        console.warn('No session token available - signing out');
-        // No valid session - sign out and let auth flow handle redirect
-        await supabase.auth.signOut();
-        throw new Error('No valid session - please log in again');
+        console.warn('No session token available');
+        // Proceed without token - let backend return 401 if needed
+        return config;
       }
     } catch (error: any) {
       console.error('Error getting session in interceptor:', error);
@@ -61,13 +77,17 @@ axiosInstance.interceptors.request.use(
       // Determine if this is a timeout error
       const isTimeout = error?.message?.includes('timeout');
       if (isTimeout) {
-        console.error('SESSION TIMEOUT - Signing out user and redirecting to login');
+        console.warn('SESSION TIMEOUT - proceeding without token, request may fail with 401');
+        // Don't sign out on timeout - just proceed without token
+        // The backend will return 401 if auth is required, handled in response interceptor
+        return config;
       }
       
-      // If we can't get a session, sign out to prevent broken state
+      // For non-timeout errors, reject the request but DON'T sign out
+      // Let the user stay logged in and try again
+      console.error('Session error - rejecting request but keeping user logged in');
       clearSessionCache();
-      await supabase.auth.signOut();
-      throw error; // Reject the request so it doesn't proceed without auth
+      throw error; // Reject the request but don't sign out
     }
 
     return config;
@@ -173,7 +193,7 @@ export const api = {
       });
       return data;
     },
-    create: async (groupId: string) => {
+    create: async (groupId: string | null = null) => {
       const { data } = await axiosInstance.post('/sessions', { group_id: groupId });
       return data;
     },

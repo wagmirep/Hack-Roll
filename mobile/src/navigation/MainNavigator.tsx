@@ -67,7 +67,7 @@ export function MainNavigator() {
         component={RecordStackNavigator}
         options={{
           title: 'Record',
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 24 }}>🎙️</Text>,
+          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 24, fontWeight: '600' }}>●</Text>,
         }}
       />
       <Tab.Screen 
@@ -75,7 +75,7 @@ export function MainNavigator() {
         component={StatsScreen}
         options={{
           title: 'Stats',
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 24 }}>📊</Text>,
+          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 24, fontWeight: '600' }}>≣</Text>,
         }}
       />
     </Tab.Navigator>
