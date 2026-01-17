@@ -237,7 +237,11 @@ def _transcribe_audio_array(audio_data, sample_rate: int = SAMPLE_RATE) -> str:
 
     # MERaLiON uses a chat-style interface with prompt template
     prompt_template = "Instruction: {query} \nFollow the text instruction based on the following audio: <SpeechHere>"
-    transcribe_prompt = "Please transcribe this speech."
+    # Use detailed Singlish-optimized prompt (same as Colab notebook) for better accuracy
+    transcribe_prompt = """Transcribe this Singlish speech using romanized text only. 
+Do NOT use Chinese characters. 
+Write Singlish words in romanized form: walao, shiok, lah, leh, lor, sia, paiseh, sian, etc.
+Output format: Speaker labels with romanized transcription."""
 
     conversation = [[{"role": "user", "content": prompt_template.format(query=transcribe_prompt)}]]
     chat_prompt = processor.tokenizer.apply_chat_template(
