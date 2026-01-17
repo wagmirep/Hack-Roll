@@ -5,6 +5,29 @@
 
 ---
 
+## Phase 6: Hackathon Deployment 🚧
+
+**Goal:** Deploy full app for hackathon demo with QR code access
+
+**Status:** Planned (0/3 plans complete)
+
+**Delivers:**
+- ⏳ Backend deployed to Railway (Plan 06-01)
+- ⏳ Expo web frontend deployed to Vercel (Plan 06-02)
+- ⏳ QR code for judges to scan (Plan 06-03)
+
+**Key files:**
+- `backend/Dockerfile` — Production container (to create)
+- `mobile/vercel.json` — Vercel build config (to create)
+- `docs/demo-qr.png` — QR code for demo (to create)
+
+**Plans:**
+- ⏳ 06-01: Backend Deployment (Railway)
+- ⏳ 06-02: Frontend Deployment (Vercel)
+- ⏳ 06-03: QR Code and Documentation
+
+---
+
 ## Phase 5: Batched Transcription 🚧
 
 **Goal:** Reduce post-recording wait time from 60-120s to 5-10s
