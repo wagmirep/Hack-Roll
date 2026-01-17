@@ -6,7 +6,8 @@ PURPOSE:
     These models map directly to the Supabase database tables.
 """
 
-from sqlalchemy import Column, String, Integer, BigInteger, DateTime, Text, ForeignKey, DECIMAL, UUID, JSON
+from sqlalchemy import Column, String, Integer, BigInteger, DateTime, Text, ForeignKey, DECIMAL, UUID, JSON, Numeric, Index
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -164,10 +165,40 @@ class TargetWord(Base):
 class AudioChunk(Base):
     """Audio chunks uploaded during recording"""
     __tablename__ = "audio_chunks"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id = Column(UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
     chunk_number = Column(Integer, nullable=False)
     storage_path = Column(Text, nullable=False)
     duration_seconds = Column(DECIMAL(10, 2))
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChunkTranscription(Base):
+    """Cached transcription for uploaded audio chunks.
+
+    Stores transcription results computed in the background as chunks are uploaded.
+    Used by processor.py to speed up post-recording processing by reusing cached text.
+    """
+    __tablename__ = "chunk_transcriptions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id = Column(UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
+    chunk_number = Column(Integer, nullable=False)
+
+    # Transcription results
+    raw_text = Column(Text, nullable=True)  # Raw model output
+    corrected_text = Column(Text, nullable=True)  # After apply_corrections()
+    word_counts = Column(JSONB, nullable=True)  # {word: count} dict
+
+    # Metadata
+    duration_seconds = Column(Numeric(10, 3), nullable=True)  # Chunk duration
+    transcribed_at = Column(DateTime(timezone=True), nullable=True)
+    error_message = Column(Text, nullable=True)  # If transcription failed
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Constraints - unique index on (session_id, chunk_number)
+    __table_args__ = (
+        Index('ix_chunk_transcriptions_session_chunk', 'session_id', 'chunk_number', unique=True),
+    )
