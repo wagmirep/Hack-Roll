@@ -1,78 +1,45 @@
-fastapi>=0.109.0
-uvicorn[standard]>=0.27.0
-transformers>=4.36.2
-torch>=2.9.0
-pyannote.audio>=3.1.1
-librosa>=0.10.1
-redis>=5.0.1
-psycopg2-binary>=2.9.9
-python-multipart>=0.0.6
-pydantic>=2.5.3
-python-dotenv>=1.0.0
-boto3>=1.34.22
-firebase-admin>=6.4.0
-sqlalchemy>=2.0.25
-alembic>=1.13.1
 # requirements.txt - Python Dependencies
 #
-# PURPOSE:
-#     Define all Python package dependencies for the backend.
-#     Install with: pip install -r requirements.txt
-#
-# REFERENCED BY:
-#     - Dockerfile
-#     - Development setup instructions
-#     - CI/CD pipeline
-#
-# CATEGORIES:
-#     - Web Framework: FastAPI, uvicorn
-#     - Database: SQLAlchemy, psycopg2, alembic
-#     - ML/ASR: transformers, torch, pyannote.audio
-#     - Audio: librosa, soundfile
-#     - Queue: redis
-#     - Storage: boto3
-#     - Firebase: firebase-admin
-#     - Testing: pytest, httpx
+# Install with: pip install -r requirements.txt
 
 # Web Framework
-# fastapi
-# uvicorn[standard]
-# python-multipart
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
 
 # Database
-# sqlalchemy
-# psycopg2-binary
-# alembic
+sqlalchemy>=2.0.25
+psycopg2-binary>=2.9.9
+alembic>=1.13.1
 
 # ML / ASR
-# transformers
-# torch
-# pyannote.audio
-# accelerate
+transformers>=4.36.2
+torch>=2.0.0
+accelerate>=0.25.0
+
+# Speaker Diarization (Agent 1)
+pyannote.audio>=3.1.1
 
 # Audio Processing
-# librosa
-# soundfile
-# pydub
+librosa>=0.10.1
+soundfile>=0.12.0
+numpy>=1.24.0
 
 # Queue
-# redis
+redis>=5.0.1
 
 # Storage
-# boto3
+boto3>=1.34.22
 
 # Firebase
-# firebase-admin
+firebase-admin>=6.4.0
 
 # Configuration
-# python-dotenv
-# pydantic-settings
+python-dotenv>=1.0.0
+pydantic>=2.5.3
+pydantic-settings>=2.1.0
 
 # Testing
-# pytest
-# pytest-asyncio
-# httpx
-
-# Utilities
-# python-jose[cryptography]
-# passlib[bcrypt]
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+httpx>=0.26.0
