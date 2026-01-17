@@ -1083,37 +1083,57 @@ export default function WrappedScreen({ navigation, route }: Props) {
     }
   };
 
+  // Constrain dimensions for phone-like aspect ratio on wide screens
+  const MAX_WIDTH = 500;
+  const constrainedWidth = Math.min(SCREEN_WIDTH, MAX_WIDTH);
+  const constrainedHeight = SCREEN_WIDTH > MAX_WIDTH ? Math.min(SCREEN_HEIGHT, MAX_WIDTH * 1.8) : SCREEN_HEIGHT;
+
   return (
-    <DimensionsContext.Provider value={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}>
-      <TouchableWithoutFeedback onPress={handleTap}>
-        <View style={[styles.container, { width: SCREEN_WIDTH, height: SCREEN_HEIGHT }]}>
-          {/* Progress bars */}
-          <View style={styles.progressContainer}>
-            {Array.from({ length: totalSlides }).map((_, index) => (
-              <View key={index} style={[styles.progressBar, index <= currentSlide && styles.progressBarActive]} />
-            ))}
+    <View style={[styles.outerContainer, { width: SCREEN_WIDTH, height: SCREEN_HEIGHT }]}>
+      <DimensionsContext.Provider value={{ width: constrainedWidth, height: constrainedHeight }}>
+        <TouchableWithoutFeedback onPress={handleTap}>
+          <View style={[styles.container, { 
+            width: constrainedWidth, 
+            height: constrainedHeight, 
+            maxWidth: MAX_WIDTH,
+            borderRadius: SCREEN_WIDTH > MAX_WIDTH ? 16 : 0,
+          }]}>
+            {/* Progress bars */}
+            <View style={styles.progressContainer}>
+              {Array.from({ length: totalSlides }).map((_, index) => (
+                <View key={index} style={[styles.progressBar, index <= currentSlide && styles.progressBarActive]} />
+              ))}
+            </View>
+
+            {/* Close button */}
+            <TouchableOpacity 
+              style={styles.closeButton} 
+              onPress={() => navigation.goBack()}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+
+            {renderCurrentSlide()}
           </View>
-
-          {/* Close button */}
-          <TouchableOpacity 
-            style={styles.closeButton} 
-            onPress={() => navigation.goBack()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="close" size={28} color="#fff" />
-          </TouchableOpacity>
-
-          {renderCurrentSlide()}
-        </View>
-      </TouchableWithoutFeedback>
-    </DimensionsContext.Provider>
+        </TouchableWithoutFeedback>
+      </DimensionsContext.Provider>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  outerContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   container: {
     flex: 1,
     backgroundColor: '#000',
+    overflow: 'hidden',
+    borderRadius: 0,
   },
   loadingContainer: {
     flex: 1,
