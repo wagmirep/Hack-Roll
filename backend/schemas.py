@@ -198,6 +198,50 @@ class SessionResultsResponse(BaseModel):
     all_claimed: bool
 
 
+class SessionHistoryResponse(BaseModel):
+    """Session history with summary stats"""
+    id: UUID4
+    group_id: UUID4
+    started_by: UUID4
+    started_by_name: str
+    status: str
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
+    total_speakers: int = 0
+    my_total_words: int = 0
+    group_total_words: int = 0
+
+
+class UserSessionStatsResponse(BaseModel):
+    """Individual user stats for a specific session"""
+    session_id: UUID4
+    user_id: UUID4
+    username: str
+    display_name: Optional[str]
+    word_counts: List[UserWordCountResponse]
+    total_words: int
+    session_started_at: datetime
+    session_duration: Optional[int]
+
+
+class SessionComparisonItem(BaseModel):
+    """Stats for one session in comparison"""
+    session_id: UUID4
+    started_at: datetime
+    total_words: int
+    unique_words: int
+    word_counts: List[UserWordCountResponse]
+
+
+class SessionComparisonResponse(BaseModel):
+    """Compare multiple sessions"""
+    user_id: UUID4
+    sessions: List[SessionComparisonItem]
+    total_across_sessions: int
+    average_per_session: float
+
+
 # ============================================================================
 # USER SEARCH SCHEMAS
 # ============================================================================
@@ -239,6 +283,7 @@ class UserStatsResponse(BaseModel):
     word_counts: List[WordStatsResponse]
     total_words: int
     rank: Optional[int] = None
+    top_words: Optional[Dict[str, int]] = None  # Dictionary mapping word to count for frontend compatibility
 
 
 class GroupStatsResponse(BaseModel):
@@ -250,6 +295,16 @@ class GroupStatsResponse(BaseModel):
     total_words: int
     leaderboard: List[UserStatsResponse]
     word_breakdown: List[WordStatsResponse]
+
+
+class GlobalLeaderboardResponse(BaseModel):
+    """Global leaderboard across all users"""
+    period: str
+    total_users: int
+    total_sessions: int
+    total_words: int
+    leaderboard: List[UserStatsResponse]
+    top_words: List[WordStatsResponse]
 
 
 class MyStatsResponse(BaseModel):
@@ -281,6 +336,13 @@ class WrappedResponse(BaseModel):
     badges: List[str]
 
 
+class TrendDataPoint(BaseModel):
+    """Single data point in trends analysis"""
+    period: datetime
+    total_words: int
+    sessions: int
+
+
 # ============================================================================
 # ERROR SCHEMAS
 # ============================================================================
@@ -302,3 +364,11 @@ class HealthResponse(BaseModel):
     timestamp: datetime
     database: str
     version: str
+
+
+# ============================================================================
+# MODEL REBUILDING FOR FORWARD REFERENCES
+# ============================================================================
+
+# Rebuild models that use forward references
+MeResponse.model_rebuild()

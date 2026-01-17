@@ -155,8 +155,9 @@ class TargetWord(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     word = Column(String(50), unique=True, nullable=False)
     emoji = Column(String(10))
-    description = Column(Text)
     category = Column(String(50))
+    display_name = Column(String(50))
+    is_active = Column(String, server_default='true')  # boolean stored as string in some DBs
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
