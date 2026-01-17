@@ -57,22 +57,41 @@ def get_transcriber():
             from transformers import pipeline
             import torch
 
-            # Determine device
+            # Check GPU memory to decide loading strategy
+            use_device_map = False
             if torch.cuda.is_available():
-                device = 0  # First GPU
-                logger.info("Using CUDA GPU for inference")
+                total_mem_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+                logger.info(f"GPU memory: {total_mem_gb:.1f}GB")
+                # MERaLiON-2-10B needs ~20GB in fp16, use device_map for smaller GPUs
+                if total_mem_gb < 20:
+                    use_device_map = True
+                    logger.info("Using device_map='auto' for CPU offloading (GPU < 20GB)")
+                else:
+                    logger.info("Using full GPU inference")
             else:
-                device = -1  # CPU
                 logger.warning("CUDA not available, using CPU (will be slow)")
 
-            _transcriber = pipeline(
-                "automatic-speech-recognition",
-                model=MODEL_NAME,
-                device=device,
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                trust_remote_code=True,
-                model_kwargs={"attn_implementation": "eager"},
-            )
+            if use_device_map:
+                # Use device_map for automatic CPU/GPU split
+                _transcriber = pipeline(
+                    "automatic-speech-recognition",
+                    model=MODEL_NAME,
+                    device_map="auto",
+                    torch_dtype=torch.float16,
+                    trust_remote_code=True,
+                    model_kwargs={"attn_implementation": "eager"},
+                )
+            else:
+                # Standard loading (full GPU or CPU)
+                device = 0 if torch.cuda.is_available() else -1
+                _transcriber = pipeline(
+                    "automatic-speech-recognition",
+                    model=MODEL_NAME,
+                    device=device,
+                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                    trust_remote_code=True,
+                    model_kwargs={"attn_implementation": "eager"},
+                )
 
             logger.info("MERaLiON model loaded successfully")
             return _transcriber

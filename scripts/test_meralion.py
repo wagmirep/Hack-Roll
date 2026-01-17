@@ -212,14 +212,24 @@ def main():
     try:
         import torch
         # PyTorch 2.6+ compatibility fix
-        # PyTorch 2.6 changed default weights_only=True in torch.load()
-        import torch.torch_version
-        torch.serialization.add_safe_globals([torch.torch_version.TorchVersion])
+        # Monkey-patch torch.load to use weights_only=False
+        _original_torch_load = torch.load
+        def _patched_torch_load(*args, **kwargs):
+            kwargs.setdefault('weights_only', False)
+            return _original_torch_load(*args, **kwargs)
+        torch.load = _patched_torch_load
 
         print(f"  PyTorch: {torch.__version__}")
         print(f"  CUDA available: {torch.cuda.is_available()}")
         if torch.cuda.is_available():
             print(f"  CUDA device: {torch.cuda.get_device_name(0)}")
+            # Show GPU memory
+            total_mem = torch.cuda.get_device_properties(0).total_memory / 1e9
+            free_mem = (torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0)) / 1e9
+            print(f"  GPU memory: {free_mem:.1f}GB free / {total_mem:.1f}GB total")
+            if total_mem < 20:
+                print(f"  WARNING: MERaLiON-2-10B needs ~20GB VRAM. You have {total_mem:.1f}GB.")
+                print(f"           Model may fail to load or crash. Consider using CPU offload.")
     except ImportError:
         print("  ERROR: PyTorch not installed")
         sys.exit(1)
