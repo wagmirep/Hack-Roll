@@ -24,10 +24,15 @@ from schemas import (
 )
 from storage import storage
 import uuid
+import json
+import logging
 from typing import List, Optional
 from datetime import datetime
 
+from redis_client import get_redis_client, PROCESSING_QUEUE
+
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=List[SessionHistoryResponse])
@@ -264,8 +269,28 @@ async def end_session(
     db.commit()
     db.refresh(session)
     
-    # TODO: Queue background processing job
-    # For now, we'll create mock speakers for testing
+    # Queue processing job to Redis
+    try:
+        redis_client = get_redis_client()
+        job_payload = json.dumps({
+            "session_id": str(session_id),
+            "queued_at": datetime.utcnow().isoformat()
+        })
+        
+        redis_client.lpush(PROCESSING_QUEUE, job_payload)
+        logger.info(f"✅ Queued processing job for session {session_id}")
+        logger.debug(f"Job payload: {job_payload}")
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to queue processing job: {e}", exc_info=True)
+        # Update session to failed status
+        session.status = "failed"
+        session.error_message = f"Failed to queue processing: {str(e)}"
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to queue processing job. Please try again or contact support."
+        )
     
     return session
 
