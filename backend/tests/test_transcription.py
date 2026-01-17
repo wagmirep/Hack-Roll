@@ -330,10 +330,10 @@ class TestConstants:
     """Tests for module constants."""
 
     def test_model_name_is_meralion(self):
-        """Test that correct model name is configured."""
+        """Test that correct model name is configured (3B variant for CPU optimization)."""
         import services.transcription as t
 
-        assert t.MODEL_NAME == "MERaLiON/MERaLiON-2-10B-ASR"
+        assert t.MODEL_NAME == "MERaLiON/MERaLiON-2-3B"
 
     def test_sample_rate_is_16khz(self):
         """Test that sample rate is 16kHz."""

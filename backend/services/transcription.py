@@ -40,6 +40,9 @@ _model = None
 _processor = None
 _model_lock = Lock()
 
+# Backward compatibility alias for tests
+_transcriber = None  # Will be set to (model, processor) tuple when loaded
+
 
 def _optimize_for_cpu(model):
     """
@@ -364,7 +367,8 @@ def transcribe_segment(audio_bytes: bytes, sample_rate: int = SAMPLE_RATE) -> st
 
 def is_model_loaded() -> bool:
     """Check if the transcription model is currently loaded."""
-    return _model is not None and _processor is not None
+    # Check both new API (_model, _processor) and legacy _transcriber
+    return (_model is not None and _processor is not None) or _transcriber is not None
 
 
 def unload_model() -> None:
@@ -373,15 +377,18 @@ def unload_model() -> None:
 
     Useful for testing or when switching between models.
     """
-    global _model, _processor
+    global _model, _processor, _transcriber
 
     with _model_lock:
-        if _model is not None:
+        if _model is not None or _transcriber is not None:
             logger.info("Unloading MERaLiON model")
-            del _model
-            del _processor
+            if _model is not None:
+                del _model
+            if _processor is not None:
+                del _processor
             _model = None
             _processor = None
+            _transcriber = None
 
             # Force garbage collection
             import gc
@@ -471,7 +478,6 @@ CORRECTIONS: Dict[str, str] = {
     'she ok': 'shiok',
     'shoe ok': 'shiok',
     'shi ok': 'shiok',
-    'shio': 'shiok',
     # Alamak
     'ala mak': 'alamak',
     'allah mak': 'alamak',
@@ -550,6 +556,7 @@ WORD_CORRECTIONS: Dict[str, str] = {
     'mah': 'meh',
     'huh': 'hor',
     'arh': 'ah',
+    'shio': 'shiok',  # Needs word boundary to avoid shiok → shiokk
 }
 
 # Target Singlish words to count
