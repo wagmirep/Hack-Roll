@@ -5,6 +5,7 @@ import RecordingScreen from '../screens/RecordingScreen';
 import ProcessingScreen from '../screens/ProcessingScreen';
 import ClaimingScreen from '../screens/ClaimingScreen';
 import ResultsScreen from '../screens/ResultsScreen';
+import WrappedScreen from '../screens/WrappedScreen';
 import StatsScreen from '../screens/StatsScreen';
 import { Text } from 'react-native';
 
@@ -18,6 +19,7 @@ export type RecordStackParamList = {
   Processing: { sessionId: string };
   Claiming: { sessionId: string };
   Results: { sessionId: string };
+  Wrapped: { data?: any };
 };
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -25,26 +27,27 @@ const RecordStack = createStackNavigator<RecordStackParamList>();
 
 function RecordStackNavigator() {
   return (
-    <RecordStack.Navigator>
-      <RecordStack.Screen 
-        name="Recording" 
+    <RecordStack.Navigator screenOptions={{ headerShown: false }}>
+      <RecordStack.Screen
+        name="Recording"
         component={RecordingScreen}
-        options={{ title: 'Record Session' }}
       />
-      <RecordStack.Screen 
-        name="Processing" 
+      <RecordStack.Screen
+        name="Processing"
         component={ProcessingScreen}
-        options={{ title: 'Processing...', headerLeft: () => null }}
       />
-      <RecordStack.Screen 
-        name="Claiming" 
+      <RecordStack.Screen
+        name="Claiming"
         component={ClaimingScreen}
-        options={{ title: 'Claim Your Voice' }}
+        options={{ headerShown: true, title: 'Claim Your Voice' }}
       />
-      <RecordStack.Screen 
-        name="Results" 
+      <RecordStack.Screen
+        name="Results"
         component={ResultsScreen}
-        options={{ title: 'Session Results' }}
+      />
+      <RecordStack.Screen
+        name="Wrapped"
+        component={WrappedScreen}
       />
     </RecordStack.Navigator>
   );
