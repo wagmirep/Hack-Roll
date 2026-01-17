@@ -53,11 +53,8 @@ export default function SignupScreen({ navigation }: Props) {
     setLoading(true);
     try {
       await signUp(email, password, username);
-      Alert.alert(
-        'Success!', 
-        'Account created! Please check your email to verify your account.',
-        [{ text: 'OK', onPress: () => navigation.navigate('Login') }]
-      );
+      // Navigate to success screen instead of showing alert
+      navigation.navigate('SignupSuccess');
     } catch (error: any) {
       Alert.alert('Signup Failed', error.message || 'Please try again');
     } finally {
