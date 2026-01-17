@@ -21,8 +21,7 @@
 | Task | Assigned | Branch | Started |
 |------|----------|--------|---------|
 | Backend API Implementation | Unassigned | — | — |
-| Supabase Database Setup | Unassigned | — | — |
-| Environment Configuration | Unassigned | — | — |
+| Frontend Auth Debugging | Winston | — | Jan 17, 2026 |
 
 ### 🟢 Ready for PR
 
@@ -44,6 +43,9 @@
 | Mobile Claiming Flow | Winston | Jan 17, 2026 |
 | Mobile Stats Screen | Winston | Jan 17, 2026 |
 | Mobile Components & Hooks | Winston | Jan 17, 2026 |
+| Supabase Database Schema | Winston | Jan 17, 2026 |
+| Database Migration Files | Winston | Jan 17, 2026 |
+| Mobile Environment Setup | Winston | Jan 17, 2026 |
 
 ---
 
@@ -51,16 +53,18 @@
 
 ### Priority 1 — Must Have (MVP)
 
-- [ ] **Supabase Project Setup**
+- [x] **Supabase Project Setup** ✅ COMPLETED
   - Description: Create and configure Supabase project with database schema
   - Success criteria:
-    - [ ] Supabase project created
-    - [ ] All database tables created (profiles, groups, sessions, etc.)
-    - [ ] RLS policies configured
-    - [ ] Database trigger for auto-profile creation set up
-    - [ ] Target words table seeded
-  - Assigned: Unassigned
-  - Notes: See `docs/plans/2025-01-17-supabase-integration-design.md` for complete schema
+    - [x] Supabase project created
+    - [x] All database tables created (profiles, groups, sessions, etc.)
+    - [x] RLS policies configured
+    - [x] Database trigger for auto-profile creation set up
+    - [x] Target words table seeded (11 Singlish words)
+  - Assigned: Winston
+  - Completed: Jan 17, 2026
+  - Notes: Migration file: `backend/migrations/001_initial_schema.sql`
+  - Documentation: `DATABASE_SETUP_GUIDE.md`, `QUICKSTART_DATABASE.md`
 
 - [ ] **Backend FastAPI Implementation**
   - Description: Implement all backend endpoints with JWT auth
@@ -88,16 +92,18 @@
   - Assigned: Unassigned
   - Notes: Critical path - this is the core ML functionality
 
-- [ ] **Mobile Environment Configuration**
+- [x] **Mobile Environment Configuration** ✅ COMPLETED
   - Description: Configure mobile .env with real credentials
   - Success criteria:
-    - [ ] EXPO_PUBLIC_SUPABASE_URL set
-    - [ ] EXPO_PUBLIC_SUPABASE_ANON_KEY set
-    - [ ] EXPO_PUBLIC_API_URL set (with IP for physical devices)
-    - [ ] Dependencies installed (npm install)
-    - [ ] App starts without errors
-  - Assigned: Unassigned
-  - Notes: See mobile/QUICKSTART.md for instructions
+    - [x] EXPO_PUBLIC_SUPABASE_URL set
+    - [x] EXPO_PUBLIC_SUPABASE_ANON_KEY set
+    - [x] EXPO_PUBLIC_API_URL set (localhost:8000)
+    - [x] Dependencies installed (TypeScript, React, web deps)
+    - [x] App starts without errors (running on port 8081)
+    - [x] Asset files created (icon, splash, favicon)
+  - Assigned: Winston
+  - Completed: Jan 17, 2026
+  - Notes: App successfully starts, auth debugging in progress
 
 - [ ] **End-to-End Testing**
   - Description: Test complete flow from signup to results
@@ -300,6 +306,10 @@ Copy this when adding new tasks:
 - [2026-01-17 22:00] **Architecture Decision** - Using Supabase for auth + PostgreSQL, FastAPI for business logic, direct SQLAlchemy for database queries. Hybrid approach for best of both worlds.
 - [2026-01-17 22:00] **Mobile Stack Finalized** - React Native (Expo), TypeScript, Supabase Auth, Axios for API, Expo AV for audio
 - [2026-01-17 22:00] **Critical Path** - Backend API implementation + Supabase setup are now the blockers for E2E testing
+- [2026-01-17 23:30] **Database Schema Complete** ✅ - Full Supabase schema applied: 10 tables, RLS policies, triggers, views, seeded with 11 Singlish words. Migration file created.
+- [2026-01-17 23:30] **Environment Setup Complete** ✅ - Mobile .env configured with Supabase credentials, all dependencies installed, dev server running on port 8081.
+- [2026-01-17 23:30] **Documentation Created** - DATABASE_SETUP_GUIDE.md, QUICKSTART_DATABASE.md, CREDENTIALS_NEEDED.md, DATABASE_SUMMARY.md (26KB of comprehensive guides)
+- [2026-01-17 23:35] **Current Status** - Mobile app running, database schema deployed, debugging 401 auth errors (likely email confirmation setting)
 
 ### 📱 Mobile App Status
 
@@ -318,7 +328,8 @@ Copy this when adding new tasks:
 - Documentation (README, SETUP, QUICKSTART, IMPLEMENTATION_SUMMARY)
 
 **📋 TODO:**
-- Configure .env with real Supabase credentials
+- ✅ ~~Configure .env with real Supabase credentials~~ DONE
+- Debug 401 auth errors (check email confirmation settings)
 - Add group creation/join UI
 - Test on physical device with real backend
 - Handle edge cases and improve error messages
@@ -326,9 +337,16 @@ Copy this when adding new tasks:
 
 ### 🔧 Backend Status
 
+**✅ COMPLETE:**
+- ✅ Supabase project configured (tamrgxhjyabdvtubseyu.supabase.co)
+- ✅ Database schema deployed (10 tables, RLS policies, triggers)
+- ✅ Migration file created (`backend/migrations/001_initial_schema.sql`)
+- ✅ Target words seeded (11 Singlish words with emojis)
+- ✅ Auto-profile creation trigger working
+
 **❌ TODO:**
-- Set up Supabase project and database schema
 - Implement all FastAPI endpoints
+- JWT validation middleware
 - Integrate ML models (pyannote + MERaLiON)
 - Set up audio storage (S3/Supabase Storage)
 - Implement background job processing
@@ -336,12 +354,22 @@ Copy this when adding new tasks:
 
 ### 📚 Key Documentation
 
+**Mobile:**
 - Mobile architecture: `mobile/IMPLEMENTATION_SUMMARY.md`
 - Setup guide: `mobile/SETUP.md`
 - Quick start: `mobile/QUICKSTART.md`
-- Full design: `docs/plans/2025-01-17-supabase-integration-design.md`
 - API endpoints: `mobile/src/api/client.ts`
+
+**Database:**
+- Database setup: `DATABASE_SETUP_GUIDE.md` ✨ NEW
+- Quick start: `QUICKSTART_DATABASE.md` ✨ NEW
+- Credentials guide: `CREDENTIALS_NEEDED.md` ✨ NEW
+- Overview: `DATABASE_SUMMARY.md` ✨ NEW
+- Migration SQL: `backend/migrations/001_initial_schema.sql` ✨ NEW
+
+**Design:**
+- Full system design: `docs/plans/2025-01-17-supabase-integration-design.md`
 
 ---
 
-*Last updated: January 17, 2026 - 22:00 SGT*
+*Last updated: January 17, 2026 - 15:05 SGT*
