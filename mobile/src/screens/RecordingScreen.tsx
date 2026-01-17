@@ -16,6 +16,7 @@ import { RecordStackParamList } from '../navigation/MainNavigator';
 import { useRecording } from '../hooks/useRecording';
 import { useAuth } from '../contexts/AuthContext';
 import { LinearGradient } from 'expo-linear-gradient';
+import BubbleLoadingOverlay from '../components/BubbleLoadingOverlay';
 
 type RecordingScreenNavigationProp = StackNavigationProp<RecordStackParamList, 'Recording'>;
 type RecordingScreenRouteProp = RouteProp<RecordStackParamList, 'Recording'>;
@@ -35,6 +36,7 @@ export default function RecordingScreen({ navigation, route }: Props) {
   const pausedRotationValue = useRef<number>(0);
   const pauseStartTime = useRef<number>(0);
   const totalPausedTime = useRef<number>(0);
+  const [showLoadingAnimation, setShowLoadingAnimation] = useState(true);
 
   const {
     isRecording,
@@ -246,6 +248,7 @@ export default function RecordingScreen({ navigation, route }: Props) {
                 style={styles.logoImage}
                 resizeMode="cover"
               />
+              <View style={styles.greyOverlay} />
             </View>
           </Animated.View>
         </TouchableOpacity>
@@ -319,6 +322,7 @@ export default function RecordingScreen({ navigation, route }: Props) {
                   ]}
                   resizeMode="cover"
                 />
+                <View style={styles.greyOverlay} />
               </View>
             </View>
           </View>
@@ -368,6 +372,7 @@ export default function RecordingScreen({ navigation, route }: Props) {
                 ]}
                 resizeMode="cover"
               />
+              <View style={styles.greyOverlay} />
             </View>
           </View>
         </View>
@@ -395,24 +400,13 @@ export default function RecordingScreen({ navigation, route }: Props) {
 
   return (
     <LinearGradient
-      colors={['#8B1A1A', '#6B1515', '#A64545']}
+      colors={['#0A0A0A', '#1A1A1A', '#0F0F0F']}
       locations={[0, 0.5, 1]}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
       style={styles.container}
     >
       <SafeAreaView style={styles.safeArea}>
-        {/* Top Navigation */}
-        <View style={styles.topNav}>
-          <TouchableOpacity style={styles.navButton} activeOpacity={0.7}>
-            <Text style={styles.navIconText}>⏱</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navButton} activeOpacity={0.7}>
-            <Text style={styles.navIconText}>⚙</Text>
-            <View style={styles.notificationDot} />
-          </TouchableOpacity>
-        </View>
-
         {/* Recording Duration */}
         {isRecording && (
           <View style={styles.durationContainer}>
@@ -444,6 +438,13 @@ export default function RecordingScreen({ navigation, route }: Props) {
           </View>
         )}
       </SafeAreaView>
+      
+      {/* Bubble Loading Animation Overlay */}
+      {showLoadingAnimation && (
+        <BubbleLoadingOverlay 
+          onComplete={() => setShowLoadingAnimation(false)}
+        />
+      )}
     </LinearGradient>
   );
 }
@@ -532,7 +533,7 @@ const styles = StyleSheet.create({
     borderRadius: 110,
     borderWidth: 5,
     borderColor: '#FFFFFF',
-    backgroundColor: '#8B1A1A',
+    backgroundColor: '#4A4A4A',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
@@ -545,6 +546,15 @@ const styles = StyleSheet.create({
   logoImage: {
     width: '100%',
     height: '100%',
+  },
+  greyOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(128, 128, 128, 0.7)',
+    mixBlendMode: 'saturation',
   },
   recordingContainer: {
     width: 300,

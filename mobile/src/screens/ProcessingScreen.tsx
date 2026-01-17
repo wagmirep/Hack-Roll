@@ -123,7 +123,7 @@ export default function ProcessingScreen({ navigation, route }: Props) {
 
   return (
     <LinearGradient
-      colors={['#6B1B1B', '#A64545']}
+      colors={['#0A0A0A', '#1A1A1A']}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
       style={styles.container}
@@ -138,6 +138,7 @@ export default function ProcessingScreen({ navigation, route }: Props) {
                 style={styles.logoImage}
                 resizeMode="cover"
               />
+              <View style={styles.greyOverlay} />
             </View>
           </View>
 
@@ -220,7 +221,7 @@ const styles = StyleSheet.create({
     borderRadius: 80,
     borderWidth: 5,
     borderColor: '#FFFFFF',
-    backgroundColor: '#ED4545',
+    backgroundColor: '#4A4A4A',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
@@ -228,6 +229,14 @@ const styles = StyleSheet.create({
   logoImage: {
     width: '100%',
     height: '100%',
+  },
+  greyOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(128, 128, 128, 0.7)',
   },
   title: {
     fontSize: 28,
