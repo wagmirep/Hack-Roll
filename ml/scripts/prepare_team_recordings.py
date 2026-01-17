@@ -105,6 +105,117 @@ def get_audio_duration(audio_path: Path) -> float:
     return len(y) / sr
 
 
+def split_batch_by_silence(
+    input_path: Path,
+    output_dir: Path,
+    min_silence_len: float = 1.5,
+    silence_thresh_db: float = -40,
+    min_segment_len: float = 1.0,
+    max_segment_len: float = 30.0
+) -> list[Path]:
+    """
+    Split a batch recording into individual files by detecting silence gaps.
+
+    Args:
+        input_path: Path to batch audio file
+        output_dir: Directory to save split files
+        min_silence_len: Minimum silence duration to split on (seconds)
+        silence_thresh_db: Silence threshold in dB (lower = more sensitive)
+        min_segment_len: Minimum segment length to keep (seconds)
+        max_segment_len: Maximum segment length (seconds)
+
+    Returns:
+        List of paths to created audio files
+    """
+    if not AUDIO_LIBS_AVAILABLE:
+        raise RuntimeError("librosa/soundfile not installed")
+
+    import numpy as np
+
+    # Load audio
+    y, sr = librosa.load(input_path, sr=SAMPLE_RATE, mono=True)
+
+    # Convert to amplitude
+    # Calculate RMS energy in small windows
+    frame_length = int(0.025 * sr)  # 25ms frames
+    hop_length = int(0.010 * sr)    # 10ms hop
+
+    rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
+    rms_db = librosa.amplitude_to_db(rms, ref=np.max)
+
+    # Find silence regions
+    is_silence = rms_db < silence_thresh_db
+
+    # Convert frame indices to sample indices
+    frame_to_sample = lambda f: f * hop_length
+
+    # Find silence boundaries
+    silence_starts = []
+    silence_ends = []
+    in_silence = False
+    silence_start = 0
+
+    for i, silent in enumerate(is_silence):
+        if silent and not in_silence:
+            in_silence = True
+            silence_start = i
+        elif not silent and in_silence:
+            in_silence = False
+            silence_duration = (i - silence_start) * hop_length / sr
+            if silence_duration >= min_silence_len:
+                silence_starts.append(silence_start)
+                silence_ends.append(i)
+
+    # Handle case where audio ends in silence
+    if in_silence:
+        silence_duration = (len(is_silence) - silence_start) * hop_length / sr
+        if silence_duration >= min_silence_len:
+            silence_starts.append(silence_start)
+            silence_ends.append(len(is_silence))
+
+    # Create segment boundaries (split at middle of each silence)
+    split_points = [0]
+    for start, end in zip(silence_starts, silence_ends):
+        mid_frame = (start + end) // 2
+        mid_sample = frame_to_sample(mid_frame)
+        split_points.append(mid_sample)
+    split_points.append(len(y))
+
+    # Extract speaker name from input filename
+    speaker = input_path.stem.split('_')[0].lower()
+
+    # Save segments
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_paths = []
+    segment_num = 1
+
+    for i in range(len(split_points) - 1):
+        start_sample = split_points[i]
+        end_sample = split_points[i + 1]
+
+        segment = y[start_sample:end_sample]
+        duration = len(segment) / sr
+
+        # Skip too short or too long segments
+        if duration < min_segment_len:
+            continue
+        if duration > max_segment_len:
+            print(f"  Warning: Segment {segment_num} is {duration:.1f}s (> {max_segment_len}s)")
+
+        # Trim leading/trailing silence from segment
+        segment_trimmed, _ = librosa.effects.trim(segment, top_db=30)
+
+        # Save segment
+        output_filename = f"{speaker}_template_{segment_num:03d}.wav"
+        output_path = output_dir / output_filename
+        sf.write(output_path, segment_trimmed, sr)
+        output_paths.append(output_path)
+
+        segment_num += 1
+
+    return output_paths
+
+
 def convert_to_16khz_mono(input_path: Path, output_path: Path) -> None:
     """Convert audio to 16kHz mono WAV format."""
     if not AUDIO_LIBS_AVAILABLE:
@@ -394,6 +505,73 @@ def show_stats():
             with open(split_path) as f:
                 data = json.load(f)
             print(f"  {split}.json: {len(data)} samples")
+
+
+def run_split_batch(
+    input_files: list[str],
+    silence_len: float = 1.5,
+    silence_thresh: float = -40
+):
+    """Split batch recording files by silence detection."""
+    setup_directories()
+
+    if not input_files:
+        # Find batch files (files with 'batch' in name)
+        batch_files = list(AUDIO_DIR.glob("*batch*"))
+        if not batch_files:
+            print(f"\nNo batch files found in {AUDIO_DIR}")
+            print("Expected filename format: speakername_templates_batch.wav")
+            print("\nOr specify files directly:")
+            print("  python prepare_team_recordings.py --split-batch path/to/file.wav")
+            return
+        input_files = [str(f) for f in batch_files]
+
+    total_segments = 0
+
+    for input_file in input_files:
+        input_path = Path(input_file)
+
+        # Handle relative paths
+        if not input_path.is_absolute():
+            # Check if file exists in AUDIO_DIR
+            if (AUDIO_DIR / input_path.name).exists():
+                input_path = AUDIO_DIR / input_path.name
+            elif not input_path.exists():
+                print(f"\nFile not found: {input_file}")
+                continue
+
+        print(f"\nSplitting: {input_path.name}")
+        print(f"  Silence threshold: {silence_thresh} dB")
+        print(f"  Minimum silence gap: {silence_len}s")
+
+        try:
+            output_paths = split_batch_by_silence(
+                input_path,
+                output_dir=AUDIO_DIR,
+                min_silence_len=silence_len,
+                silence_thresh_db=silence_thresh
+            )
+            print(f"  Created {len(output_paths)} segments")
+            total_segments += len(output_paths)
+
+            # Show first few
+            for path in output_paths[:5]:
+                duration = get_audio_duration(path)
+                print(f"    - {path.name} ({duration:.1f}s)")
+            if len(output_paths) > 5:
+                print(f"    ... and {len(output_paths) - 5} more")
+
+        except Exception as e:
+            print(f"  ERROR: {e}")
+
+    print(f"\n{'='*60}")
+    print(f"SPLIT COMPLETE: {total_segments} total segments created")
+    print(f"{'='*60}")
+    print(f"\nSegments saved to: {AUDIO_DIR}")
+    print("\nNEXT STEPS:")
+    print("1. Run: python prepare_team_recordings.py --auto-transcribe")
+    print("2. Correct transcripts in transcripts/ folder")
+    print("3. Run: python prepare_team_recordings.py --process")
 
 
 # =============================================================================

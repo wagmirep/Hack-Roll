@@ -10,7 +10,8 @@
       "WebFetch(domain:aws.amazon.com)",
       "Bash(git worktree:*)",
       "Skill(code-review)",
-      "Bash(python -m pytest:*)"
+      "Bash(python -m pytest:*)",
+      "Skill(systematic-debugging)"
     ]
   }
 }

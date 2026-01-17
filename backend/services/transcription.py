@@ -127,8 +127,9 @@ def _transcribe_audio_array(audio_data, sample_rate: int = SAMPLE_RATE) -> str:
     audio_data = audio_data.astype(np.float32)
 
     # Process audio through processor
+    # MERaLiON processor expects 'audio' as keyword argument, not positional
     inputs = processor(
-        audio_data,
+        audio=audio_data,
         sampling_rate=sample_rate,
         return_tensors="pt"
     )
