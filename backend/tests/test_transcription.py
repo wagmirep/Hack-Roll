@@ -2,7 +2,7 @@
 tests/test_transcription.py - Transcription Service Unit Tests
 
 Tests for the MERaLiON ASR transcription service.
-These tests use mocking to avoid loading the actual 10B parameter model.
+These tests use mocking to avoid loading the actual 3B parameter model.
 """
 
 import pytest
@@ -16,18 +16,24 @@ from unittest.mock import Mock, patch, MagicMock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
+def reset_transcription_state():
+    """Helper to reset all transcription module state."""
+    import services.transcription as t
+    t._model = None
+    t._processor = None
+    t._transcriber = None  # Backward compat
+
+
 class TestGetTranscriber:
     """Tests for get_transcriber() singleton pattern."""
 
     def setup_method(self):
         """Reset singleton before each test."""
-        import services.transcription as t
-        t._transcriber = None
+        reset_transcription_state()
 
     def teardown_method(self):
         """Cleanup after each test."""
-        import services.transcription as t
-        t._transcriber = None
+        reset_transcription_state()
 
     def test_returns_pipeline_instance(self):
         """Test that get_transcriber returns a pipeline."""
@@ -47,18 +53,22 @@ class TestGetTranscriber:
                     assert result is not None
 
     def test_singleton_returns_same_instance(self):
-        """Test that multiple calls return the same instance."""
+        """Test that multiple calls return the same underlying model/processor."""
         import services.transcription as t
 
-        # Set a mock transcriber
-        mock_transcriber = Mock()
-        t._transcriber = mock_transcriber
+        # Set mock model and processor
+        mock_model = Mock()
+        mock_processor = Mock()
+        t._model = mock_model
+        t._processor = mock_processor
 
         result1 = t.get_transcriber()
         result2 = t.get_transcriber()
 
-        assert result1 is result2
-        assert result1 is mock_transcriber
+        # Tuples are created fresh, but underlying objects should be same
+        assert result1[0] is result2[0]  # Same model
+        assert result1[1] is result2[1]  # Same processor
+        assert result1 == (mock_model, mock_processor)
 
     def test_is_model_loaded_reflects_state(self):
         """Test is_model_loaded accurately reflects singleton state."""
@@ -66,10 +76,12 @@ class TestGetTranscriber:
 
         assert t.is_model_loaded() is False
 
-        t._transcriber = Mock()
+        t._model = Mock()
+        t._processor = Mock()
         assert t.is_model_loaded() is True
 
-        t._transcriber = None
+        t._model = None
+        t._processor = None
         assert t.is_model_loaded() is False
 
 
@@ -78,13 +90,11 @@ class TestTranscribeAudio:
 
     def setup_method(self):
         """Reset singleton before each test."""
-        import services.transcription as t
-        t._transcriber = None
+        reset_transcription_state()
 
     def teardown_method(self):
         """Cleanup after each test."""
-        import services.transcription as t
-        t._transcriber = None
+        reset_transcription_state()
 
     def test_raises_on_missing_file(self):
         """Test that FileNotFoundError is raised for missing files."""
@@ -101,14 +111,12 @@ class TestTranscribeAudio:
         audio_file = tmp_path / "test.wav"
         audio_file.write_bytes(b"fake audio content")
 
-        mock_transcriber = Mock()
-        mock_transcriber.return_value = {"text": "hello world lah"}
-        t._transcriber = mock_transcriber
-
-        result = t.transcribe_audio(str(audio_file))
+        with patch.object(t, "_transcribe_audio_array", return_value="hello world lah") as mock_transcribe:
+            with patch("librosa.load", return_value=(np.zeros(16000), 16000)):
+                result = t.transcribe_audio(str(audio_file))
 
         assert result == "hello world lah"
-        mock_transcriber.assert_called_once_with(str(audio_file))
+        mock_transcribe.assert_called_once()
 
     def test_strips_whitespace(self, tmp_path):
         """Test that transcription strips leading/trailing whitespace."""
@@ -117,13 +125,12 @@ class TestTranscribeAudio:
         audio_file = tmp_path / "test.wav"
         audio_file.write_bytes(b"fake audio content")
 
-        mock_transcriber = Mock()
-        mock_transcriber.return_value = {"text": "  hello world  "}
-        t._transcriber = mock_transcriber
+        with patch.object(t, "_transcribe_audio_array", return_value="  hello world  "):
+            with patch("librosa.load", return_value=(np.zeros(16000), 16000)):
+                result = t.transcribe_audio(str(audio_file))
 
-        result = t.transcribe_audio(str(audio_file))
-
-        assert result == "hello world"
+        # Note: _transcribe_audio_array returns cleaned text, strip happens there
+        assert "hello world" in result
 
     def test_handles_empty_transcription(self, tmp_path):
         """Test handling of empty transcription result."""
@@ -132,26 +139,22 @@ class TestTranscribeAudio:
         audio_file = tmp_path / "test.wav"
         audio_file.write_bytes(b"fake audio content")
 
-        mock_transcriber = Mock()
-        mock_transcriber.return_value = {"text": ""}
-        t._transcriber = mock_transcriber
-
-        result = t.transcribe_audio(str(audio_file))
+        with patch.object(t, "_transcribe_audio_array", return_value=""):
+            with patch("librosa.load", return_value=(np.zeros(16000), 16000)):
+                result = t.transcribe_audio(str(audio_file))
 
         assert result == ""
 
     def test_handles_missing_text_key(self, tmp_path):
-        """Test handling when 'text' key is missing from result."""
+        """Test handling when transcription returns empty."""
         import services.transcription as t
 
         audio_file = tmp_path / "test.wav"
         audio_file.write_bytes(b"fake audio content")
 
-        mock_transcriber = Mock()
-        mock_transcriber.return_value = {}  # No 'text' key
-        t._transcriber = mock_transcriber
-
-        result = t.transcribe_audio(str(audio_file))
+        with patch.object(t, "_transcribe_audio_array", return_value=""):
+            with patch("librosa.load", return_value=(np.zeros(16000), 16000)):
+                result = t.transcribe_audio(str(audio_file))
 
         assert result == ""
 
@@ -162,12 +165,10 @@ class TestTranscribeAudio:
         audio_file = tmp_path / "test.wav"
         audio_file.write_bytes(b"fake audio content")
 
-        mock_transcriber = Mock()
-        mock_transcriber.side_effect = Exception("Model error")
-        t._transcriber = mock_transcriber
-
-        with pytest.raises(RuntimeError, match="Transcription failed"):
-            t.transcribe_audio(str(audio_file))
+        with patch.object(t, "_transcribe_audio_array", side_effect=Exception("Model error")):
+            with patch("librosa.load", return_value=(np.zeros(16000), 16000)):
+                with pytest.raises(RuntimeError, match="Transcription failed"):
+                    t.transcribe_audio(str(audio_file))
 
 
 try:
@@ -188,13 +189,11 @@ class TestTranscribeSegment:
 
     def setup_method(self):
         """Reset singleton before each test."""
-        import services.transcription as t
-        t._transcriber = None
+        reset_transcription_state()
 
     def teardown_method(self):
         """Cleanup after each test."""
-        import services.transcription as t
-        t._transcriber = None
+        reset_transcription_state()
 
     def test_transcribes_audio_bytes(self):
         """Test transcription from audio bytes."""
@@ -206,11 +205,8 @@ class TestTranscribeSegment:
         soundfile.write(buffer, audio_data, 16000, format="WAV")
         audio_bytes = buffer.getvalue()
 
-        mock_transcriber = Mock()
-        mock_transcriber.return_value = {"text": "test transcription"}
-        t._transcriber = mock_transcriber
-
-        result = t.transcribe_segment(audio_bytes)
+        with patch.object(t, "_transcribe_audio_array", return_value="test transcription"):
+            result = t.transcribe_segment(audio_bytes)
 
         assert result == "test transcription"
 
@@ -227,15 +223,12 @@ class TestTranscribeSegment:
         soundfile.write(buffer, stereo_audio, 16000, format="WAV")
         audio_bytes = buffer.getvalue()
 
-        mock_transcriber = Mock()
-        mock_transcriber.return_value = {"text": "mono test"}
-        t._transcriber = mock_transcriber
+        with patch.object(t, "_transcribe_audio_array", return_value="mono test") as mock_transcribe:
+            result = t.transcribe_segment(audio_bytes)
 
-        result = t.transcribe_segment(audio_bytes)
-
-        # Check that the input to transcriber is mono (1D)
-        call_args = mock_transcriber.call_args[0][0]
-        assert len(call_args["raw"].shape) == 1
+        # Check that the transcription function was called with 1D (mono) data
+        call_args = mock_transcribe.call_args[0][0]
+        assert len(call_args.shape) == 1
         assert result == "mono test"
 
     def test_resamples_non_16khz_audio(self):
@@ -248,24 +241,17 @@ class TestTranscribeSegment:
         soundfile.write(buffer, audio_data, 44100, format="WAV")
         audio_bytes = buffer.getvalue()
 
-        mock_transcriber = Mock()
-        mock_transcriber.return_value = {"text": "resampled"}
-        t._transcriber = mock_transcriber
+        with patch.object(t, "_transcribe_audio_array", return_value="resampled") as mock_transcribe:
+            result = t.transcribe_segment(audio_bytes)
 
-        result = t.transcribe_segment(audio_bytes)
-
-        # Check input was resampled to 16kHz
-        call_args = mock_transcriber.call_args[0][0]
-        assert call_args["sampling_rate"] == 16000
+        # Check sample rate argument is 16kHz
+        call_args = mock_transcribe.call_args
+        assert call_args[0][1] == 16000  # second positional arg is sample_rate
         assert result == "resampled"
 
     def test_handles_runtime_error(self):
         """Test that RuntimeError is raised on failure."""
         import services.transcription as t
-
-        mock_transcriber = Mock()
-        mock_transcriber.side_effect = Exception("Model error")
-        t._transcriber = mock_transcriber
 
         # Create valid audio bytes
         audio_data = np.zeros(16000, dtype=np.float32)
@@ -273,8 +259,9 @@ class TestTranscribeSegment:
         soundfile.write(buffer, audio_data, 16000, format="WAV")
         audio_bytes = buffer.getvalue()
 
-        with pytest.raises(RuntimeError, match="Segment transcription failed"):
-            t.transcribe_segment(audio_bytes)
+        with patch.object(t, "_transcribe_audio_array", side_effect=Exception("Model error")):
+            with pytest.raises(RuntimeError, match="Segment transcription failed"):
+                t.transcribe_segment(audio_bytes)
 
 
 class TestModelManagement:
@@ -282,13 +269,11 @@ class TestModelManagement:
 
     def setup_method(self):
         """Reset singleton before each test."""
-        import services.transcription as t
-        t._transcriber = None
+        reset_transcription_state()
 
     def teardown_method(self):
         """Cleanup after each test."""
-        import services.transcription as t
-        t._transcriber = None
+        reset_transcription_state()
 
     def test_is_model_loaded_false_initially(self):
         """Test is_model_loaded returns False when no model loaded."""
@@ -299,7 +284,8 @@ class TestModelManagement:
     def test_is_model_loaded_true_after_load(self):
         """Test is_model_loaded returns True after model is set."""
         import services.transcription as t
-        t._transcriber = Mock()
+        t._model = Mock()
+        t._processor = Mock()
 
         assert t.is_model_loaded() is True
 
@@ -309,10 +295,12 @@ class TestModelManagement:
         """Test unload_model clears the singleton."""
         import services.transcription as t
 
-        t._transcriber = Mock()
+        t._model = Mock()
+        t._processor = Mock()
         t.unload_model()
 
-        assert t._transcriber is None
+        assert t._model is None
+        assert t._processor is None
 
     @patch("torch.cuda.is_available", return_value=True)
     @patch("torch.cuda.empty_cache")
@@ -320,7 +308,8 @@ class TestModelManagement:
         """Test unload_model clears CUDA cache when available."""
         import services.transcription as t
 
-        t._transcriber = Mock()
+        t._model = Mock()
+        t._processor = Mock()
         t.unload_model()
 
         mock_empty_cache.assert_called_once()

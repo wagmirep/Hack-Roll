@@ -79,13 +79,12 @@ class TestDiarizationIntegration:
             speaker_id="SPEAKER_00",
             start_time=0.0,
             end_time=5.0,
-            duration=5.0,
         )
 
         assert segment.speaker_id == "SPEAKER_00"
         assert segment.start_time == 0.0
         assert segment.end_time == 5.0
-        assert segment.duration == 5.0
+        assert segment.duration == 5.0  # Computed property
 
 
 class TestProcessorHelpers:
@@ -112,9 +111,9 @@ class TestProcessorPipelineFlow:
         from services.diarization import SpeakerSegment
 
         mock_segments = [
-            SpeakerSegment("SPEAKER_00", 0.0, 5.0, 5.0),
-            SpeakerSegment("SPEAKER_01", 5.5, 10.0, 4.5),
-            SpeakerSegment("SPEAKER_00", 10.5, 15.0, 4.5),
+            SpeakerSegment("SPEAKER_00", 0.0, 5.0),
+            SpeakerSegment("SPEAKER_01", 5.5, 10.0),
+            SpeakerSegment("SPEAKER_00", 10.5, 15.0),
         ]
 
         patches = {
