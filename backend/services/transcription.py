@@ -142,9 +142,21 @@ def _transcribe_audio_array(audio_data, sample_rate: int = SAMPLE_RATE) -> str:
     # Note: audios must be a list of audio arrays
     inputs = processor(text=chat_prompt, audios=[audio_data])
 
-    # Move inputs to model device
+    # Move inputs to model device and dtype
+    # Model is loaded in float16, so inputs must match
     device = next(model.parameters()).device
-    inputs = {k: v.to(device) if hasattr(v, 'to') else v for k, v in inputs.items()}
+    dtype = next(model.parameters()).dtype  # Usually float16
+
+    def move_to_device(v):
+        if not hasattr(v, 'to'):
+            return v
+        v = v.to(device)
+        # Only convert floating point tensors to model dtype
+        if v.is_floating_point():
+            v = v.to(dtype)
+        return v
+
+    inputs = {k: move_to_device(v) for k, v in inputs.items()}
 
     # Generate transcription
     with torch.no_grad():

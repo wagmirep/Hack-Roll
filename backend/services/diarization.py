@@ -37,6 +37,22 @@ from typing import List, Optional
 from threading import Lock
 
 import torch
+
+# =============================================================================
+# PyTorch 2.6+ COMPATIBILITY FIX - MUST BE BEFORE ANY PYANNOTE IMPORT
+# =============================================================================
+# PyTorch 2.6 changed default weights_only=True in torch.load(), which breaks
+# pyannote model loading. Patch torch.load at module level BEFORE pyannote
+# is imported anywhere, since pyannote caches torch.load reference at import time.
+_original_torch_load = torch.load
+
+def _patched_torch_load(*args, **kwargs):
+    kwargs.setdefault('weights_only', False)
+    return _original_torch_load(*args, **kwargs)
+
+torch.load = _patched_torch_load
+# =============================================================================
+
 import soundfile as sf
 import numpy as np
 
@@ -108,28 +124,13 @@ def get_diarization_pipeline():
         logger.info(f"Loading diarization model: {MODEL_NAME}")
 
         try:
-            # PyTorch 2.6+ compatibility fix
-            # PyTorch 2.6 changed default weights_only=True in torch.load(),
-            # which breaks pyannote model loading.
-            # Solution: Temporarily patch torch.load during model loading.
-            _original_torch_load = torch.load
+            # torch.load is already patched at module level for PyTorch 2.6+ compat
+            from pyannote.audio import Pipeline
 
-            def _patched_torch_load(*args, **kwargs):
-                kwargs.setdefault('weights_only', False)
-                return _original_torch_load(*args, **kwargs)
-
-            torch.load = _patched_torch_load
-
-            try:
-                from pyannote.audio import Pipeline
-
-                pipeline = Pipeline.from_pretrained(
-                    MODEL_NAME,
-                    token=hf_token
-                )
-            finally:
-                # Restore original torch.load
-                torch.load = _original_torch_load
+            pipeline = Pipeline.from_pretrained(
+                MODEL_NAME,
+                token=hf_token
+            )
 
             # Move to GPU if available
             if torch.cuda.is_available():
