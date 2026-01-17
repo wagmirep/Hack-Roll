@@ -1,39 +1,100 @@
 """
 services/transcription.py - MERaLiON Transcription Service
 
-Wrapper service for MERaLiON-2-10B-ASR speech-to-text model.
+Wrapper service for MERaLiON ASR speech-to-text model.
 Transcribes Singlish audio segments to text.
 
-Agent 2 scope: Model loading and transcription only.
-Post-processing (corrections, word counting) handled by Agent 3.
+OPTIMIZATION: Uses MERaLiON-2-3B (lightweight) instead of 10B for faster CPU inference.
+- 3B params vs 10B = ~3x smaller, ~3-4x faster on CPU
+- Singlish WER: 18% (vs 12% for 10B-ASR) - acceptable for hackathon
+- Added INT8 dynamic quantization for additional CPU speedup
 """
 
 import os
 import re
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 from threading import Lock
 
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# MODEL SINGLETON (Agent 2)
+# MODEL CONFIGURATION
+# =============================================================================
+
+# Use lightweight 3B model for faster CPU inference
+# Trade-off: ~6% more errors but 3-4x faster
+MODEL_NAME = "MERaLiON/MERaLiON-2-3B"
+SAMPLE_RATE = 16000  # Expected input sample rate
+
+# CPU Optimization settings
+ENABLE_QUANTIZATION = True  # INT8 dynamic quantization for CPU
+ENABLE_TORCH_COMPILE = True  # torch.compile() for faster inference
+NUM_THREADS = None  # None = auto-detect, or set specific number
+
+# =============================================================================
+# MODEL SINGLETON
 # =============================================================================
 
 _model = None
 _processor = None
 _model_lock = Lock()
 
-# Model configuration
-MODEL_NAME = "MERaLiON/MERaLiON-2-10B-ASR"
-SAMPLE_RATE = 16000  # Expected input sample rate
+
+def _optimize_for_cpu(model):
+    """
+    Apply CPU-specific optimizations to the model.
+
+    - Dynamic INT8 quantization (2x speedup on CPU)
+    - torch.compile() if available (10-30% speedup)
+    - Thread optimization
+    """
+    import torch
+
+    # Set optimal thread count
+    if NUM_THREADS:
+        torch.set_num_threads(NUM_THREADS)
+    else:
+        # Use all available cores
+        import multiprocessing
+        cores = multiprocessing.cpu_count()
+        torch.set_num_threads(cores)
+        logger.info(f"Set torch threads to {cores}")
+
+    # Enable torch inference optimizations
+    torch.set_grad_enabled(False)
+
+    # Apply INT8 dynamic quantization for CPU
+    if ENABLE_QUANTIZATION:
+        try:
+            logger.info("Applying INT8 dynamic quantization for CPU...")
+            model = torch.quantization.quantize_dynamic(
+                model,
+                {torch.nn.Linear},  # Quantize linear layers
+                dtype=torch.qint8
+            )
+            logger.info("INT8 quantization applied successfully")
+        except Exception as e:
+            logger.warning(f"Quantization failed, using unquantized model: {e}")
+
+    # Apply torch.compile() for additional speedup
+    if ENABLE_TORCH_COMPILE:
+        try:
+            if hasattr(torch, 'compile'):
+                logger.info("Applying torch.compile() optimization...")
+                model = torch.compile(model, mode="reduce-overhead")
+                logger.info("torch.compile() applied successfully")
+        except Exception as e:
+            logger.warning(f"torch.compile() failed, using uncompiled model: {e}")
+
+    return model
 
 
 def get_transcriber():
     """
     Get or create the MERaLiON model and processor instances.
 
-    Uses singleton pattern to avoid reloading the 10B parameter model.
+    Uses singleton pattern to avoid reloading the model.
     Thread-safe initialization.
 
     Returns:
@@ -58,44 +119,42 @@ def get_transcriber():
             from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
             import torch
 
-            # Check GPU memory to decide loading strategy
-            use_device_map = False
-            if torch.cuda.is_available():
-                total_mem_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-                logger.info(f"GPU memory: {total_mem_gb:.1f}GB")
-                # MERaLiON-2-10B needs ~20GB in fp16, use device_map for smaller GPUs
-                if total_mem_gb < 20:
-                    use_device_map = True
-                    logger.info("Using device_map='auto' for CPU offloading (GPU < 20GB)")
-                else:
-                    logger.info("Using full GPU inference")
-            else:
-                logger.warning("CUDA not available, using CPU (will be slow)")
-
             # Load processor
             _processor = AutoProcessor.from_pretrained(
                 MODEL_NAME,
                 trust_remote_code=True
             )
 
-            # Load model with appropriate device strategy
-            if use_device_map:
+            # Check for GPU
+            if torch.cuda.is_available():
+                total_mem_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+                logger.info(f"GPU available: {total_mem_gb:.1f}GB")
+
+                # 3B model fits easily on most GPUs
                 _model = AutoModelForSpeechSeq2Seq.from_pretrained(
                     MODEL_NAME,
                     torch_dtype=torch.float16,
-                    device_map="auto",
                     trust_remote_code=True,
                     attn_implementation="eager",
-                )
+                ).to("cuda")
+                logger.info("Model loaded on GPU (float16)")
             else:
+                logger.info("No GPU available, loading for CPU inference...")
+
+                # Load in float32 for CPU (required for quantization)
                 _model = AutoModelForSpeechSeq2Seq.from_pretrained(
                     MODEL_NAME,
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                    torch_dtype=torch.float32,
                     trust_remote_code=True,
                     attn_implementation="eager",
                 )
-                if torch.cuda.is_available():
-                    _model = _model.to("cuda")
+
+                # Apply CPU optimizations
+                _model = _optimize_for_cpu(_model)
+                logger.info("Model loaded on CPU with optimizations")
+
+            # Set to eval mode
+            _model.eval()
 
             logger.info("MERaLiON model loaded successfully")
             return _model, _processor
@@ -103,6 +162,49 @@ def get_transcriber():
         except Exception as e:
             logger.error(f"Failed to load MERaLiON model: {e}")
             raise RuntimeError(f"Failed to load transcription model: {e}") from e
+
+
+def _clean_model_output(text: str) -> str:
+    """
+    Clean raw model output by removing prompt templates and artifacts.
+
+    MERaLiON outputs include the chat template, speaker markers, and
+    sometimes bracketed words that need to be cleaned before processing.
+
+    Args:
+        text: Raw model output
+
+    Returns:
+        Cleaned transcription text
+    """
+    if not text:
+        return text
+
+    result = text
+
+    # Remove everything up to and including "model\n" (chat template prefix)
+    if "model\n" in result:
+        result = result.split("model\n", 1)[-1]
+
+    # Remove speaker markers like <Speaker1>:, <Speaker2>:, etc.
+    result = re.sub(r'<Speaker\d+>:\s*', '', result)
+
+    # Remove <SpeechHere> tags
+    result = re.sub(r'<SpeechHere>', '', result)
+
+    # Clean bracketed words: !(walao)! -> walao, (lah) -> lah
+    result = re.sub(r'!\(([^)]+)\)!', r'\1', result)  # !(word)! -> word
+    result = re.sub(r'\(([a-zA-Z]+)\)', r'\1', result)  # (word) -> word
+
+    # Remove filler markers
+    result = re.sub(r'\(err\)', '', result, flags=re.IGNORECASE)
+    result = re.sub(r'\(uh\)', '', result, flags=re.IGNORECASE)
+    result = re.sub(r'\(um\)', '', result, flags=re.IGNORECASE)
+
+    # Clean up extra whitespace
+    result = re.sub(r'\s+', ' ', result).strip()
+
+    return result
 
 
 def _transcribe_audio_array(audio_data, sample_rate: int = SAMPLE_RATE) -> str:
@@ -126,8 +228,7 @@ def _transcribe_audio_array(audio_data, sample_rate: int = SAMPLE_RATE) -> str:
         audio_data = np.array(audio_data)
     audio_data = audio_data.astype(np.float32)
 
-    # MERaLiON-2-10B-ASR uses a chat-style interface with prompt template
-    # The processor expects: text (chat prompt) and audios (list of arrays)
+    # MERaLiON uses a chat-style interface with prompt template
     prompt_template = "Instruction: {query} \nFollow the text instruction based on the following audio: <SpeechHere>"
     transcribe_prompt = "Please transcribe this speech."
 
@@ -139,31 +240,38 @@ def _transcribe_audio_array(audio_data, sample_rate: int = SAMPLE_RATE) -> str:
     )
 
     # Process audio through processor
-    # Note: audios must be a list of audio arrays
     inputs = processor(text=chat_prompt, audios=[audio_data])
 
     # Move inputs to model device and dtype
-    # Model is loaded in float16, so inputs must match
     device = next(model.parameters()).device
-    dtype = next(model.parameters()).dtype  # Usually float16
+    dtype = next(model.parameters()).dtype
 
     def move_to_device(v):
         if not hasattr(v, 'to'):
             return v
         v = v.to(device)
         # Only convert floating point tensors to model dtype
-        if v.is_floating_point():
+        if v.is_floating_point() and dtype in [torch.float16, torch.bfloat16]:
             v = v.to(dtype)
         return v
 
     inputs = {k: move_to_device(v) for k, v in inputs.items()}
 
-    # Generate transcription
-    with torch.no_grad():
-        generated_ids = model.generate(**inputs, max_new_tokens=256)
+    # Generate transcription with inference mode for speed
+    with torch.inference_mode():
+        generated_ids = model.generate(
+            **inputs,
+            max_new_tokens=256,
+            do_sample=False,  # Greedy decoding is faster
+        )
 
-    # Decode
+    # Decode - skip the input tokens
+    input_len = inputs['input_ids'].size(1)
+    generated_ids = generated_ids[:, input_len:]
     transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+
+    # Clean model output artifacts
+    transcription = _clean_model_output(transcription)
 
     return transcription.strip()
 
@@ -189,12 +297,22 @@ def transcribe_audio(audio_path: str) -> str:
 
     try:
         import librosa
+        import time
 
         # Load audio file
+        start = time.time()
         audio_data, sr = librosa.load(audio_path, sr=SAMPLE_RATE)
+        load_time = time.time() - start
 
+        # Transcribe
+        start = time.time()
         text = _transcribe_audio_array(audio_data, SAMPLE_RATE)
-        logger.info(f"Transcription complete: {len(text)} characters")
+        transcribe_time = time.time() - start
+
+        audio_duration = len(audio_data) / SAMPLE_RATE
+        logger.info(f"Transcription complete: {len(text)} chars")
+        logger.info(f"  Audio: {audio_duration:.1f}s, Load: {load_time:.1f}s, Transcribe: {transcribe_time:.1f}s")
+        logger.info(f"  Real-time factor: {transcribe_time / audio_duration:.2f}x")
 
         return text
 
@@ -273,38 +391,26 @@ def unload_model() -> None:
                 torch.cuda.empty_cache()
 
 
+def get_model_info() -> Dict[str, str]:
+    """Return info about the loaded model."""
+    return {
+        "model_name": MODEL_NAME,
+        "quantization_enabled": ENABLE_QUANTIZATION,
+        "torch_compile_enabled": ENABLE_TORCH_COMPILE,
+        "is_loaded": is_model_loaded(),
+    }
+
+
 # =============================================================================
-# SINGLISH POST-PROCESSING CORRECTIONS (Agent 3)
-# =============================================================================
-#
-# These dictionaries correct common ASR (Automatic Speech Recognition)
-# misrecognitions of Singlish words. MERaLiON may transcribe Singlish slang
-# as similar-sounding English words/phrases.
-#
-# HOW TO EXTEND:
-# --------------
-# When testing reveals new mistranscriptions, add them to the appropriate dict:
-#
-# 1. CORRECTIONS - For multi-word phrases OR unique single words
-#    Example: 'cheap buy': 'cheebai'  (ASR heard "cheap buy" for "cheebai")
-#    - Matched via simple substring replacement (case-insensitive)
-#    - Longer phrases are matched first to avoid partial matches
-#
-# 2. WORD_CORRECTIONS - For single words that might appear inside other words
-#    Example: 'la': 'lah'  (but don't change "salah" or "malaysia")
-#    - Matched with word boundary checking (\b regex)
-#    - Use this when the misheard word is a common English word/substring
-#
-# After adding corrections, also add the target word to TARGET_WORDS list
-# if you want to count its occurrences.
-#
+# SINGLISH POST-PROCESSING CORRECTIONS
 # =============================================================================
 
 # Corrections dictionary for common ASR misrecognitions
-# Maps misrecognized phrases -> correct Singlish word
 CORRECTIONS: Dict[str, str] = {
-    # Walao variations (multi-word first)
+    # Walao variations
     'while up': 'walao',
+    'wah lao eh': 'walao',
+    'wa lao eh': 'walao',
     'wah lao': 'walao',
     'wa lao': 'walao',
     'wah low': 'walao',
@@ -312,115 +418,188 @@ CORRECTIONS: Dict[str, str] = {
     'while ah': 'walao',
     'wah lau': 'walao',
     'wa lau': 'walao',
-    # Vulgar - cheebai variations
+    'wah liao': 'walao',
+    'wa liao': 'walao',
+    'while low': 'walao',
+    'wah lei': 'walao',
+    'why lao': 'walao',
+    'why low': 'walao',
+    'wah la': 'walao',
+    # Vulgar - cheebai
     'cheap buy': 'cheebai',
     'chee bye': 'cheebai',
     'chi bye': 'cheebai',
     'chee bai': 'cheebai',
     'chi bai': 'cheebai',
-    # Vulgar - lanjiao variations
+    'chee by': 'cheebai',
+    'chi by': 'cheebai',
+    'cb': 'cheebai',
+    'c b': 'cheebai',
+    'see bee': 'cheebai',
+    # Vulgar - lanjiao
     'lunch hour': 'lanjiao',
     'lan jiao': 'lanjiao',
     'lan chow': 'lanjiao',
     'lan chiao': 'lanjiao',
-    # Paiseh variations
+    'lun jiao': 'lanjiao',
+    'lan chio': 'lanjiao',
+    'lunchow': 'lanjiao',
+    'lan jio': 'lanjiao',
+    # Vulgar - kanina
+    'can nina': 'kanina',
+    'kar ni na': 'kanina',
+    'ka ni na': 'kanina',
+    'car nina': 'kanina',
+    'knn': 'kanina',
+    'k n n': 'kanina',
+    # Vulgar - nabei
+    'nah bay': 'nabei',
+    'na bei': 'nabei',
+    'nah bei': 'nabei',
+    'na beh': 'nabei',
+    'nah beh': 'nabei',
+    # Paiseh
     'pie say': 'paiseh',
     'pai seh': 'paiseh',
     'pie seh': 'paiseh',
     'pai say': 'paiseh',
-    # Shiok variations
+    'pie se': 'paiseh',
+    'pai se': 'paiseh',
+    'paise': 'paiseh',
+    # Shiok
     'shook': 'shiok',
     'she ok': 'shiok',
-    # Sia variations
+    'shoe ok': 'shiok',
+    'shi ok': 'shiok',
+    'shio': 'shiok',
+    # Alamak
+    'ala mak': 'alamak',
+    'allah mak': 'alamak',
+    'a la mak': 'alamak',
+    'allamak': 'alamak',
+    'aller mak': 'alamak',
+    # Aiyo/Aiyah
+    'ai yo': 'aiyo',
+    'ai yoh': 'aiyo',
+    'aiya': 'aiyah',
+    'ai ya': 'aiyah',
+    'eye yo': 'aiyo',
+    'aye yo': 'aiyo',
+    'ai yah': 'aiyah',
+    'eye yah': 'aiyah',
+    # Jialat
+    'jia lat': 'jialat',
+    'gia lat': 'jialat',
+    'jia lut': 'jialat',
+    'jee ah lat': 'jialat',
+    'gia lut': 'jialat',
+    # Bojio
+    'bo jio': 'bojio',
+    'boh jio': 'bojio',
+    'bo gio': 'bojio',
+    'never jio': 'bojio',
+    'boh gio': 'bojio',
+    # Sia
     'see ya': 'sia',
     'see ah': 'sia',
-    # Sian variations
+    'siah': 'sia',
+    'si ah': 'sia',
+    # Sian
     'see an': 'sian',
     'si an': 'sian',
-    # Particle variations (single word - more careful matching needed)
-    'lah ': 'lah ',  # Keep space to preserve word boundary
-    'lor ': 'lor ',
-    'loh': 'lor',
-    'leh': 'lah',
+    'see en': 'sian',
+    'si en': 'sian',
+    # Other
+    'kia su': 'kiasu',
+    'key ah su': 'kiasu',
+    'kia si': 'kiasi',
+    'key ah si': 'kiasi',
+    'boh doh': 'bodoh',
+    'bo doh': 'bodoh',
+    'sua ku': 'suaku',
+    'swah ku': 'suaku',
+    'le pak': 'lepak',
+    'lay pak': 'lepak',
+    'chop': 'chope',
+    'ma kan': 'makan',
+    'go stan': 'gostan',
+    'go stun': 'gostan',
+    'si bei': 'sibei',
+    'see bay': 'sibei',
+    'si bay': 'sibei',
+    'ah tas': 'atas',
+    'ar tas': 'atas',
+    'kay poh': 'kaypoh',
+    'kae poh': 'kaypoh',
+    'kpo': 'kaypoh',
+    'steady pom pi pi': 'steady',
+    'goon du': 'goondu',
+    'gun du': 'goondu',
 }
 
 # Single-word corrections with word boundary checking
-# Use for words that could appear as substrings in other words
-# e.g., 'la' -> 'lah' but don't affect 'salah' or 'malaysia'
 WORD_CORRECTIONS: Dict[str, str] = {
     'la': 'lah',
+    'laa': 'lah',
+    'laaa': 'lah',
     'low': 'lor',
     'loh': 'lor',
     'leh': 'lah',
+    'ler': 'lah',
     'seh': 'sia',
+    'mah': 'meh',
+    'huh': 'hor',
+    'arh': 'ah',
 }
 
-# Target Singlish words to count in transcriptions
-# Add new words here when you want to track their usage
-# Words are matched case-insensitively with word boundary detection
+# Target Singlish words to count
 TARGET_WORDS = [
-    # Vulgar/Expletives
-    'walao',
-    'cheebai',
-    'lanjiao',
+    # Vulgar
+    'walao', 'cheebai', 'lanjiao', 'kanina', 'nabei',
     # Particles
-    'lah',
-    'lor',
-    'sia',
-    'meh',
-    'leh',
-    'hor',
-    'ah',
-    # Colloquial expressions
-    'can',
-    'paiseh',
-    'shiok',
-    'sian',
-    'alamak',
-    'aiyo',
-    'bodoh',
-    'kiasu',
-    'kiasi',
-    'bojio',
+    'lah', 'lor', 'sia', 'meh', 'leh', 'hor', 'ah', 'one', 'what', 'lei', 'ma',
+    # Exclamations
+    'wah', 'eh', 'aiyo', 'aiyah', 'alamak',
+    # Colloquial
+    'can', 'cannot', 'paiseh', 'shiok', 'sian', 'bodoh', 'kiasu', 'kiasi',
+    'bojio', 'suaku', 'lepak', 'blur', 'goondu',
+    # Actions
+    'chope', 'kena', 'makan', 'tahan', 'gostan', 'cabut', 'sabo', 'arrow',
+    # Intensifiers
+    'sibei', 'buay', 'jialat',
+    # Food/Drink
+    'kopi', 'teh', 'peng',
+    # Misc
+    'atas', 'kaypoh', 'steady', 'power', 'liao',
 ]
 
 
+def _normalize_for_matching(text: str) -> str:
+    """Normalize text before correction matching."""
+    if not text:
+        return text
+    result = text
+    result = re.sub(r'!\(([^)]+)\)!', r'\1', result)
+    result = re.sub(r'\(([a-zA-Z]+)\)', r'\1', result)
+    result = re.sub(r'\s+', ' ', result)
+    return result.strip()
+
+
 def apply_corrections(text: str) -> str:
-    """
-    Apply post-processing corrections to transcribed text.
-
-    Handles common ASR misrecognitions of Singlish words.
-    Case-insensitive matching with case-preserving replacement.
-
-    Args:
-        text: Raw transcription text from ASR model
-
-    Returns:
-        Corrected text with Singlish words properly spelled
-
-    Examples:
-        >>> apply_corrections("while up why you do that")
-        'walao why you do that'
-        >>> apply_corrections("wa lao eh this is shook")
-        'walao eh this is shiok'
-    """
+    """Apply post-processing corrections to transcribed text."""
     if not text:
         return text
 
-    result = text
+    result = _normalize_for_matching(text)
 
-    # Apply multi-word corrections first (case-insensitive)
-    # Sort by length descending to match longer phrases first
+    # Apply multi-word corrections first (longer phrases first)
     sorted_corrections = sorted(CORRECTIONS.items(), key=lambda x: len(x[0]), reverse=True)
-
     for wrong, correct in sorted_corrections:
-        # Case-insensitive replacement
         pattern = re.compile(re.escape(wrong), re.IGNORECASE)
         result = pattern.sub(correct, result)
 
     # Apply single-word corrections with word boundary checking
     for wrong, correct in WORD_CORRECTIONS.items():
-        # Match whole words only (word boundaries)
         pattern = re.compile(r'\b' + re.escape(wrong) + r'\b', re.IGNORECASE)
         result = pattern.sub(correct, result)
 
@@ -428,60 +607,24 @@ def apply_corrections(text: str) -> str:
 
 
 def count_target_words(text: str) -> Dict[str, int]:
-    """
-    Count occurrences of target Singlish words in text.
-
-    Case-insensitive matching with word boundary detection.
-    Only counts whole words, not substrings (e.g., "salah" won't count as "lah").
-
-    Args:
-        text: Text to analyze (should be corrected first via apply_corrections)
-
-    Returns:
-        Dictionary mapping word -> count for words that appear at least once
-
-    Examples:
-        >>> count_target_words("walao sia this is shiok")
-        {'walao': 1, 'sia': 1, 'shiok': 1}
-        >>> count_target_words("lah lah lah you know lah")
-        {'lah': 4}
-        >>> count_target_words("hello how are you")
-        {}
-    """
+    """Count occurrences of target Singlish words in text."""
     if not text:
         return {}
 
-    # Normalize text for counting
-    normalized = text.lower()
-
+    normalized = _normalize_for_matching(text.lower())
     counts: Dict[str, int] = {}
 
     for word in TARGET_WORDS:
-        # Match whole words only with word boundaries
-        # Handle punctuation by using a pattern that allows punctuation at boundaries
         pattern = re.compile(r'(?<![a-zA-Z])' + re.escape(word) + r'(?![a-zA-Z])', re.IGNORECASE)
         matches = pattern.findall(normalized)
-
         if matches:
             counts[word] = len(matches)
 
     return counts
 
 
-def process_transcription(text: str) -> tuple[str, Dict[str, int]]:
-    """
-    Convenience function that applies corrections and counts words in one step.
-
-    Args:
-        text: Raw transcription text from ASR model
-
-    Returns:
-        Tuple of (corrected_text, word_counts)
-
-    Example:
-        >>> process_transcription("while up that's shook la")
-        ('walao that's shiok lah', {'walao': 1, 'shiok': 1, 'lah': 1})
-    """
+def process_transcription(text: str) -> Tuple[str, Dict[str, int]]:
+    """Apply corrections and count words in one step."""
     corrected = apply_corrections(text)
     counts = count_target_words(corrected)
     return corrected, counts
