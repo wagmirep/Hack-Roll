@@ -211,6 +211,11 @@ def main():
     print("\nChecking dependencies...")
     try:
         import torch
+        # PyTorch 2.6+ compatibility fix
+        # PyTorch 2.6 changed default weights_only=True in torch.load()
+        import torch.torch_version
+        torch.serialization.add_safe_globals([torch.torch_version.TorchVersion])
+
         print(f"  PyTorch: {torch.__version__}")
         print(f"  CUDA available: {torch.cuda.is_available()}")
         if torch.cuda.is_available():

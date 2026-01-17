@@ -23,6 +23,13 @@ import sys
 import tempfile
 import logging
 
+# PyTorch 2.6+ compatibility fix
+# PyTorch 2.6 changed default weights_only=True in torch.load(), which breaks
+# pyannote model loading. This allowlists the required class.
+import torch
+import torch.torch_version
+torch.serialization.add_safe_globals([torch.torch_version.TorchVersion])
+
 import numpy as np
 import soundfile as sf
 
