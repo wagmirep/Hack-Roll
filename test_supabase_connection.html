@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Supabase Connection Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>Supabase Connection Test</h1>
+    <div id="status">Testing...</div>
+    <div id="result"></div>
+
+    <script>
+        const SUPABASE_URL = 'https://tamrgxhjyabdvtubseyu.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhbXJneGhqeWFiZHZ0dWJzZXl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2MjczODMsImV4cCI6MjA4NDIwMzM4M30.YnQYGj5IoAsDGZZ2gRCD-fBcVRBrm_7iyX4iSiv5q1s';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        async function testConnection() {
+            const statusDiv = document.getElementById('status');
+            const resultDiv = document.getElementById('result');
+
+            try {
+                // Test 1: Check if client is initialized
+                statusDiv.innerHTML = '✅ Supabase client initialized<br>';
+                
+                // Test 2: Try to query target_words (public read access)
+                statusDiv.innerHTML += 'Testing public table access...<br>';
+                const { data, error } = await supabase
+                    .from('target_words')
+                    .select('word, emoji')
+                    .limit(5);
+
+                if (error) {
+                    statusDiv.innerHTML += `❌ Error querying table: ${error.message}<br>`;
+                    resultDiv.innerHTML = `<pre>${JSON.stringify(error, null, 2)}</pre>`;
+                } else {
+                    statusDiv.innerHTML += `✅ Successfully queried target_words table<br>`;
+                    resultDiv.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                }
+
+                // Test 3: Try to sign up
+                statusDiv.innerHTML += '<br>Testing sign-up...<br>';
+                const testEmail = `test${Date.now()}@example.com`;
+                const testPassword = 'testpass123456';
+
+                const { data: signupData, error: signupError } = await supabase.auth.signUp({
+                    email: testEmail,
+                    password: testPassword,
+                    options: {
+                        data: { username: 'testuser' }
+                    }
+                });
+
+                if (signupError) {
+                    statusDiv.innerHTML += `❌ Sign-up failed: ${signupError.message}<br>`;
+                    resultDiv.innerHTML += `<br><strong>Sign-up Error:</strong><pre>${JSON.stringify(signupError, null, 2)}</pre>`;
+                } else {
+                    statusDiv.innerHTML += `✅ Sign-up successful!<br>`;
+                    resultDiv.innerHTML += `<br><strong>Sign-up Result:</strong><pre>${JSON.stringify(signupData, null, 2)}</pre>`;
+                }
+
+            } catch (err) {
+                statusDiv.innerHTML += `❌ Unexpected error: ${err.message}<br>`;
+                resultDiv.innerHTML = `<pre>${JSON.stringify(err, null, 2)}</pre>`;
+            }
+        }
+
+        testConnection();
+    </script>
+</body>
+</html>
