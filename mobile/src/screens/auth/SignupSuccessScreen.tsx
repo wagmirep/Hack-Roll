@@ -66,7 +66,7 @@ export default function SignupSuccessScreen({ navigation }: Props) {
             {/* Success Message */}
             <Text style={styles.title}>Account Created!</Text>
             <Text style={styles.subtitle}>
-              Welcome to LahStats!
+              Welcome to Rabak!
             </Text>
 
             {/* Email Verification Message */}

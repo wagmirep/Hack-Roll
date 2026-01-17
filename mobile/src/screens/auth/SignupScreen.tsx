@@ -78,7 +78,7 @@ export default function SignupScreen({ navigation }: Props) {
         >
           <ScrollView contentContainerStyle={styles.scrollContent}>
             <View style={styles.content}>
-              <Text style={styles.title}>Join LahStats</Text>
+              <Text style={styles.title}>Join Rabak</Text>
               <Text style={styles.subtitle}>Start tracking your Singlish!</Text>
 
               <View style={styles.form}>

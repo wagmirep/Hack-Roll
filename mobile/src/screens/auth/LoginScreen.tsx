@@ -57,7 +57,7 @@ export default function LoginScreen({ navigation }: Props) {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <View style={styles.content}>
-            <Text style={styles.title}>LahStats</Text>
+            <Text style={styles.title}>Rabak</Text>
             <Text style={styles.subtitle}>Track your Singlish, lah!</Text>
 
             <View style={styles.form}>
