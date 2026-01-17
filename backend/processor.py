@@ -29,6 +29,7 @@ import io
 import uuid
 import tempfile
 import logging
+import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
@@ -55,6 +56,10 @@ from services.transcription import (
     apply_corrections,
     count_target_words,
     SAMPLE_RATE,
+)
+from services.transcription_cache import (
+    get_cached_transcriptions,
+    get_text_for_time_range,
 )
 
 logger = logging.getLogger(__name__)
@@ -334,6 +339,10 @@ async def transcribe_and_count(
     """
     Transcribe each segment and count target words per speaker.
 
+    OPTIMIZED: Uses cached chunk transcriptions when available,
+    falls back to direct transcription for uncached segments.
+    Parallelizes remaining transcription work.
+
     Args:
         audio_path: Path to full audio file
         segments: List of speaker segments
@@ -346,63 +355,106 @@ async def transcribe_and_count(
     speaker_word_counts: Dict[str, Dict[str, int]] = defaultdict(
         lambda: defaultdict(int)
     )
-    speaker_segment_counts: Dict[str, int] = defaultdict(int)
 
     total_segments = len(segments)
+    session_id = session.id
 
-    for i, segment in enumerate(segments):
-        try:
-            # Extract segment audio
-            segment_bytes = extract_speaker_segment(
-                audio_path,
-                segment.start_time,
-                segment.end_time
-            )
+    # Get cached transcriptions
+    cached = get_cached_transcriptions(db, session_id)
+    chunks = db.query(AudioChunk).filter(
+        AudioChunk.session_id == session_id
+    ).order_by(AudioChunk.chunk_number).all()
 
-            # Save segment to temp file for transcription
-            temp_segment = tempfile.NamedTemporaryFile(
-                suffix=".wav", delete=False
-            )
-            temp_segment.write(segment_bytes)
-            temp_segment.close()
+    logger.info(f"Found {len(cached)} cached chunk transcriptions")
 
+    # Separate segments into cached vs needs-transcription
+    cached_segments = []
+    uncached_segments = []
+
+    for segment in segments:
+        cached_text = get_text_for_time_range(
+            cached, chunks, segment.start_time, segment.end_time
+        )
+        if cached_text:
+            cached_segments.append((segment, cached_text))
+        else:
+            uncached_segments.append(segment)
+
+    logger.info(
+        f"Segments: {len(cached_segments)} from cache, "
+        f"{len(uncached_segments)} need transcription"
+    )
+
+    # Process cached segments (fast - just count words)
+    for i, (segment, text) in enumerate(cached_segments):
+        corrected = apply_corrections(text)
+        word_counts = count_target_words(corrected)
+
+        speaker_id = segment.speaker_id
+        for word, count in word_counts.items():
+            speaker_word_counts[speaker_id][word] += count
+
+        logger.debug(f"Cached segment ({speaker_id}): {word_counts}")
+
+    # Update progress for cached segments
+    cached_progress = len(cached_segments) * 100 // max(total_segments, 1)
+    update_progress(db, session, "transcribing", cached_progress)
+
+    # Transcribe uncached segments in parallel
+    if uncached_segments:
+        async def transcribe_segment(segment: SpeakerSegment) -> Tuple[str, Dict[str, int]]:
+            """Transcribe a single segment and return (speaker_id, word_counts)."""
             try:
-                # Transcribe
-                raw_text = transcribe_audio(temp_segment.name)
-
-                # Apply corrections
-                corrected_text = apply_corrections(raw_text)
-
-                # Count target words
-                word_counts = count_target_words(corrected_text)
-
-                # Accumulate per speaker
-                speaker_id = segment.speaker_id
-                for word, count in word_counts.items():
-                    speaker_word_counts[speaker_id][word] += count
-
-                speaker_segment_counts[speaker_id] += 1
-
-                logger.debug(
-                    f"Segment {i+1}/{total_segments} ({speaker_id}): "
-                    f"'{corrected_text[:50]}...' -> {word_counts}"
+                segment_bytes = extract_speaker_segment(
+                    audio_path, segment.start_time, segment.end_time
                 )
 
-            finally:
-                os.remove(temp_segment.name)
+                temp_segment = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+                temp_segment.write(segment_bytes)
+                temp_segment.close()
 
-        except Exception as e:
-            logger.warning(
-                f"Failed to transcribe segment {i+1} "
-                f"({segment.speaker_id}): {e}"
-            )
-            continue
+                try:
+                    # Run synchronous transcription in thread pool
+                    raw_text = await asyncio.to_thread(transcribe_audio, temp_segment.name)
+                    corrected = apply_corrections(raw_text)
+                    word_counts = count_target_words(corrected)
+                    return (segment.speaker_id, word_counts)
+                finally:
+                    os.remove(temp_segment.name)
 
-        # Update progress
-        progress = (i + 1) * 100 // total_segments
-        update_progress(db, session, "transcribing", progress)
+            except Exception as e:
+                logger.warning(f"Failed to transcribe segment ({segment.speaker_id}): {e}")
+                return (segment.speaker_id, {})
 
-    # Convert defaultdicts to regular dicts
+        # Run transcriptions in parallel (limit concurrency to avoid OOM)
+        semaphore = asyncio.Semaphore(3)  # Max 3 concurrent transcriptions
+
+        async def limited_transcribe(segment):
+            async with semaphore:
+                return await transcribe_segment(segment)
+
+        # Execute in parallel
+        results = await asyncio.gather(
+            *[limited_transcribe(seg) for seg in uncached_segments],
+            return_exceptions=True
+        )
+
+        # Aggregate results
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.warning(f"Parallel transcription error: {result}")
+                continue
+
+            speaker_id, word_counts = result
+            for word, count in word_counts.items():
+                speaker_word_counts[speaker_id][word] += count
+
+            # Update progress
+            progress = (len(cached_segments) + i + 1) * 100 // total_segments
+            update_progress(db, session, "transcribing", progress)
+
+    update_progress(db, session, "transcribing", 100)
+
     return {
         speaker: dict(counts)
         for speaker, counts in speaker_word_counts.items()
