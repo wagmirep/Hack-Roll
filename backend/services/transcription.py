@@ -70,6 +70,8 @@ def get_transcriber():
                 model=MODEL_NAME,
                 device=device,
                 torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                trust_remote_code=True,
+                model_kwargs={"attn_implementation": "eager"},
             )
 
             logger.info("MERaLiON model loaded successfully")

@@ -112,7 +112,7 @@ def get_diarization_pipeline():
 
             pipeline = Pipeline.from_pretrained(
                 MODEL_NAME,
-                use_auth_token=hf_token
+                token=hf_token
             )
 
             # Move to GPU if available
