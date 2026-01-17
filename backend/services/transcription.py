@@ -126,17 +126,25 @@ def _transcribe_audio_array(audio_data, sample_rate: int = SAMPLE_RATE) -> str:
         audio_data = np.array(audio_data)
     audio_data = audio_data.astype(np.float32)
 
-    # Process audio through processor
-    # MERaLiON processor expects 'audio' as keyword argument, not positional
-    inputs = processor(
-        audio=audio_data,
-        sampling_rate=sample_rate,
-        return_tensors="pt"
+    # MERaLiON-2-10B-ASR uses a chat-style interface with prompt template
+    # The processor expects: text (chat prompt) and audios (list of arrays)
+    prompt_template = "Instruction: {query} \nFollow the text instruction based on the following audio: <SpeechHere>"
+    transcribe_prompt = "Please transcribe this speech."
+
+    conversation = [[{"role": "user", "content": prompt_template.format(query=transcribe_prompt)}]]
+    chat_prompt = processor.tokenizer.apply_chat_template(
+        conversation=conversation,
+        tokenize=False,
+        add_generation_prompt=True
     )
+
+    # Process audio through processor
+    # Note: audios must be a list of audio arrays
+    inputs = processor(text=chat_prompt, audios=[audio_data])
 
     # Move inputs to model device
     device = next(model.parameters()).device
-    inputs = {k: v.to(device) for k, v in inputs.items()}
+    inputs = {k: v.to(device) if hasattr(v, 'to') else v for k, v in inputs.items()}
 
     # Generate transcription
     with torch.no_grad():
