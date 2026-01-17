@@ -12,9 +12,13 @@ OPTIMIZATION: Uses MERaLiON-2-3B (lightweight) instead of 10B for faster CPU inf
 
 import os
 import re
+import io
+import base64
 import logging
 from typing import Dict, Optional, Tuple
 from threading import Lock
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -283,6 +287,9 @@ def transcribe_audio(audio_path: str) -> str:
     """
     Transcribe audio file to text using MERaLiON ASR.
 
+    If TRANSCRIPTION_API_URL is set, calls the external API (Colab notebook).
+    Otherwise, uses the local model.
+
     Args:
         audio_path: Path to audio file (16kHz mono WAV recommended)
 
@@ -298,6 +305,12 @@ def transcribe_audio(audio_path: str) -> str:
 
     logger.info(f"Transcribing audio: {audio_path}")
 
+    # Use external API if configured
+    if is_using_external_api():
+        logger.info("Using external transcription API")
+        return _transcribe_via_external_api(audio_path)
+
+    # Otherwise use local model
     try:
         import librosa
         import time
@@ -328,6 +341,9 @@ def transcribe_segment(audio_bytes: bytes, sample_rate: int = SAMPLE_RATE) -> st
     """
     Transcribe audio bytes directly without saving to file.
 
+    If TRANSCRIPTION_API_URL is set, calls the external API (Colab notebook).
+    Otherwise, uses the local model.
+
     Args:
         audio_bytes: Raw audio data
         sample_rate: Sample rate of the audio (default: 16000)
@@ -338,7 +354,11 @@ def transcribe_segment(audio_bytes: bytes, sample_rate: int = SAMPLE_RATE) -> st
     Raises:
         RuntimeError: If transcription fails
     """
-    import io
+    # Use external API if configured
+    if is_using_external_api():
+        return _transcribe_segment_via_external_api(audio_bytes)
+
+    # Otherwise use local model
     import numpy as np
 
     try:
@@ -406,6 +426,142 @@ def get_model_info() -> Dict[str, str]:
         "torch_compile_enabled": ENABLE_TORCH_COMPILE,
         "is_loaded": is_model_loaded(),
     }
+
+
+# =============================================================================
+# EXTERNAL API TRANSCRIPTION (Colab notebook)
+# =============================================================================
+
+def _get_transcription_api_url() -> Optional[str]:
+    """Get external transcription API URL from config."""
+    try:
+        from config import settings
+        return settings.TRANSCRIPTION_API_URL
+    except Exception:
+        return os.getenv("TRANSCRIPTION_API_URL")
+
+
+def _convert_to_wav(audio_path: str) -> bytes:
+    """
+    Convert audio file to WAV format (16kHz mono) for API compatibility.
+
+    Args:
+        audio_path: Path to audio file (any format supported by pydub/ffmpeg)
+
+    Returns:
+        WAV audio bytes
+    """
+    from pydub import AudioSegment
+
+    # Load audio (pydub handles m4a, mp3, wav, etc.)
+    audio = AudioSegment.from_file(audio_path)
+
+    # Convert to 16kHz mono
+    audio = audio.set_frame_rate(SAMPLE_RATE).set_channels(1)
+
+    # Export as WAV to bytes
+    wav_buffer = io.BytesIO()
+    audio.export(wav_buffer, format="wav")
+    wav_buffer.seek(0)
+
+    return wav_buffer.read()
+
+
+def _transcribe_via_external_api(audio_path: str) -> str:
+    """
+    Transcribe audio by calling external API (Colab notebook).
+
+    Args:
+        audio_path: Path to audio file (any format - will be converted to WAV)
+
+    Returns:
+        Raw transcription text
+
+    Raises:
+        RuntimeError: If API call fails
+    """
+    api_url = _get_transcription_api_url()
+    if not api_url:
+        raise RuntimeError("TRANSCRIPTION_API_URL not configured")
+
+    transcribe_endpoint = f"{api_url.rstrip('/')}/transcribe"
+
+    logger.info(f"Calling external transcription API: {transcribe_endpoint}")
+
+    try:
+        # Convert to WAV format (handles m4a, mp3, etc.)
+        audio_bytes = _convert_to_wav(audio_path)
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+        # Call API with generous timeout (model inference can be slow)
+        with httpx.Client(timeout=120.0) as client:
+            response = client.post(
+                transcribe_endpoint,
+                json={"audio": audio_b64},
+                headers={"Content-Type": "application/json"}
+            )
+
+        if response.status_code != 200:
+            error_msg = response.text[:500] if response.text else "Unknown error"
+            raise RuntimeError(f"API returned {response.status_code}: {error_msg}")
+
+        result = response.json()
+
+        # API returns: {"raw_transcription": ..., "corrected": ..., "word_counts": ...}
+        raw_text = result.get("raw_transcription", "")
+
+        logger.info(f"External API transcription complete: {len(raw_text)} chars")
+        return raw_text
+
+    except httpx.TimeoutException:
+        raise RuntimeError(f"External transcription API timed out: {transcribe_endpoint}")
+    except httpx.RequestError as e:
+        raise RuntimeError(f"External transcription API request failed: {e}")
+    except Exception as e:
+        raise RuntimeError(f"External transcription failed: {e}")
+
+
+def _transcribe_segment_via_external_api(audio_bytes: bytes) -> str:
+    """
+    Transcribe audio bytes by calling external API.
+
+    Args:
+        audio_bytes: Raw audio data (WAV format)
+
+    Returns:
+        Raw transcription text
+    """
+    api_url = _get_transcription_api_url()
+    if not api_url:
+        raise RuntimeError("TRANSCRIPTION_API_URL not configured")
+
+    transcribe_endpoint = f"{api_url.rstrip('/')}/transcribe"
+
+    try:
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+        with httpx.Client(timeout=120.0) as client:
+            response = client.post(
+                transcribe_endpoint,
+                json={"audio": audio_b64},
+                headers={"Content-Type": "application/json"}
+            )
+
+        if response.status_code != 200:
+            error_msg = response.text[:500] if response.text else "Unknown error"
+            raise RuntimeError(f"API returned {response.status_code}: {error_msg}")
+
+        result = response.json()
+        return result.get("raw_transcription", "")
+
+    except Exception as e:
+        raise RuntimeError(f"External transcription failed: {e}")
+
+
+def is_using_external_api() -> bool:
+    """Check if external transcription API is configured."""
+    url = _get_transcription_api_url()
+    return url is not None and len(url) > 0
 
 
 # =============================================================================
@@ -537,6 +693,7 @@ CORRECTIONS: Dict[str, str] = {
     'ar tas': 'atas',
     'kay poh': 'kaypoh',
     'kae poh': 'kaypoh',
+    'kaypo': 'kaypoh',
     'kpo': 'kaypoh',
     'steady pom pi pi': 'steady',
     'goon du': 'goondu',
@@ -550,12 +707,13 @@ WORD_CORRECTIONS: Dict[str, str] = {
     'laaa': 'lah',
     'low': 'lor',
     'loh': 'lor',
-    'leh': 'lah',
+    # 'leh' is a distinct particle - don't convert to 'lah'
     'ler': 'lah',
     'seh': 'sia',
     'mah': 'meh',
-    'huh': 'hor',
+    # 'huh' is distinct from 'hor' - don't convert
     'arh': 'ah',
+    'err': 'eh',  # Model often mishears 'eh' as 'err'
     'shio': 'shiok',  # Needs word boundary to avoid shiok → shiokk
 }
 
@@ -566,10 +724,10 @@ TARGET_WORDS = [
     # Particles
     'lah', 'lor', 'sia', 'meh', 'leh', 'hor', 'ah', 'one', 'what', 'lei', 'ma',
     # Exclamations
-    'wah', 'eh', 'aiyo', 'aiyah', 'alamak',
+    'wah', 'eh', 'huh', 'aiyo', 'aiyah', 'alamak',
     # Colloquial
     'can', 'cannot', 'paiseh', 'shiok', 'sian', 'bodoh', 'kiasu', 'kiasi',
-    'bojio', 'suaku', 'lepak', 'blur', 'goondu',
+    'bojio', 'suaku', 'lepak', 'blur', 'goondu', 'cheem', 'chim',
     # Actions
     'chope', 'kena', 'makan', 'tahan', 'gostan', 'cabut', 'sabo', 'arrow',
     # Intensifiers

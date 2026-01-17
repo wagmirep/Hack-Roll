@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     
     # ML Models Configuration
     HUGGINGFACE_TOKEN: Optional[str] = os.getenv("HUGGINGFACE_TOKEN")
+
+    # External Transcription API (Colab notebook with MERaLiON-10B)
+    # When set, backend calls this API instead of loading local model
+    TRANSCRIPTION_API_URL: Optional[str] = os.getenv("TRANSCRIPTION_API_URL")
     
     # Redis Configuration (optional, for background jobs)
     REDIS_URL: Optional[str] = os.getenv("REDIS_URL", "redis://localhost:6379")
