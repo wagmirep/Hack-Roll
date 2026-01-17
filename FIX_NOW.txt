@@ -1,0 +1,91 @@
+╔════════════════════════════════════════════════════════════════╗
+║                    🚨 QUICK FIX GUIDE 🚨                       ║
+║          Your recording fails because database is out of sync   ║
+╚════════════════════════════════════════════════════════════════╝
+
+┌────────────────────────────────────────────────────────────────┐
+│ THE ERROR YOU'RE SEEING:                                       │
+│ ❌ POST .../chunks 500 (Internal Server Error)                 │
+│ ❌ column audio_chunks.storage_path does not exist             │
+└────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────┐
+│ THE FIX (5 MINUTES):                                           │
+└────────────────────────────────────────────────────────────────┘
+
+STEP 1: Open Supabase Dashboard
+   → Go to: https://supabase.com/dashboard
+   → Select project: tamrgxhjyabdvtubseyu
+
+STEP 2: Open SQL Editor
+   → Click "SQL Editor" in left sidebar
+   → Click "+ New query" button
+
+STEP 3: Run Migration
+   → Open file: Hack-Roll/backend/migrations/005_apply_pending_migrations.sql
+   → Copy EVERYTHING from that file
+   → Paste into SQL Editor
+   → Click "Run" (or press Cmd+Enter)
+   → Wait for: "Migration 005 completed successfully! ✅"
+
+STEP 4: Test Recording
+   → Go back to your app (http://localhost:8081)
+   → Try recording again
+   → IT SHOULD WORK! 🎉
+
+┌────────────────────────────────────────────────────────────────┐
+│ WHAT THIS DOES:                                                │
+└────────────────────────────────────────────────────────────────┘
+
+✓ Renames database column: file_url → storage_path
+✓ Allows personal recordings (group_id optional)
+✓ Updates database policies
+✓ Adds speaker claiming features
+
+┌────────────────────────────────────────────────────────────────┐
+│ TROUBLESHOOTING:                                               │
+└────────────────────────────────────────────────────────────────┘
+
+Q: Still getting error after migration?
+A: Restart backend: Ctrl+C, then run start.sh again
+
+Q: "Column already exists" error?
+A: Safe to ignore - migration still works
+
+Q: Need more details?
+A: See: Hack-Roll/backend/APPLY_MIGRATION_NOW.md
+
+┌────────────────────────────────────────────────────────────────┐
+│ FILES CREATED TO HELP YOU:                                     │
+└────────────────────────────────────────────────────────────────┘
+
+📄 backend/migrations/005_apply_pending_migrations.sql
+   → The SQL migration to run in Supabase
+
+📄 backend/APPLY_MIGRATION_NOW.md
+   → Detailed step-by-step instructions
+
+📄 backend/migrations/README.md
+   → Migration documentation
+
+📄 RECORDING_FIX_SUMMARY.md
+   → Complete technical explanation
+
+📄 FIX_NOW.txt
+   → This file - quick reference
+
+┌────────────────────────────────────────────────────────────────┐
+│ ALTERNATIVE: Command Line Method                               │
+└────────────────────────────────────────────────────────────────┘
+
+cd Hack-Roll/backend
+psql "postgresql://postgres:[PASSWORD]@db.tamrgxhjyabdvtubseyu.supabase.co:5432/postgres" \
+  < migrations/005_apply_pending_migrations.sql
+
+(Replace [PASSWORD] with your Supabase DB password)
+
+╔════════════════════════════════════════════════════════════════╗
+║ 👆 USE SUPABASE DASHBOARD METHOD - IT'S EASIER! 👆            ║
+╚════════════════════════════════════════════════════════════════╝
+
+Need help? Check backend/APPLY_MIGRATION_NOW.md for detailed guide.

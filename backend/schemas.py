@@ -86,13 +86,13 @@ class GroupMemberResponse(BaseModel):
 
 class SessionCreateRequest(BaseModel):
     """Create new recording session request"""
-    group_id: UUID4
+    group_id: Optional[UUID4] = None
 
 
 class SessionResponse(BaseModel):
     """Recording session response"""
     id: UUID4
-    group_id: UUID4
+    group_id: Optional[UUID4] = None
     started_by: UUID4
     status: str
     started_at: datetime
@@ -201,7 +201,7 @@ class SessionResultsResponse(BaseModel):
 class SessionHistoryResponse(BaseModel):
     """Session history with summary stats"""
     id: UUID4
-    group_id: UUID4
+    group_id: Optional[UUID4] = None
     started_by: UUID4
     started_by_name: str
     status: str
