@@ -109,7 +109,7 @@ export default function WrappedScreen({ navigation, route }: Props) {
   if (loading) {
     return (
       <LinearGradient
-        colors={['#FF6B5A', '#FF8A7A']}
+        colors={['#0A0A0A', '#1A1A1A']}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={styles.container}
@@ -128,7 +128,7 @@ export default function WrappedScreen({ navigation, route }: Props) {
   if (error || !data) {
     return (
       <LinearGradient
-        colors={['#FF6B5A', '#FF8A7A']}
+        colors={['#0A0A0A', '#1A1A1A']}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={styles.container}
@@ -206,6 +206,7 @@ export default function WrappedScreen({ navigation, route }: Props) {
                 style={styles.logoImage}
                 resizeMode="cover"
               />
+              <View style={styles.greyOverlay} />
             </View>
           </View>
 
@@ -480,8 +481,8 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: 60,
     borderWidth: 4,
-    borderColor: '#000000',
-    backgroundColor: '#ED4545',
+    borderColor: '#FFFFFF',
+    backgroundColor: '#4A4A4A',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
@@ -489,6 +490,14 @@ const styles = StyleSheet.create({
   logoImage: {
     width: '100%',
     height: '100%',
+  },
+  greyOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(128, 128, 128, 0.7)',
   },
   title: {
     fontSize: 32,

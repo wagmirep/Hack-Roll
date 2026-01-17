@@ -71,7 +71,7 @@ export default function ResultsScreen({ navigation, route }: Props) {
   if (loading) {
     return (
       <LinearGradient
-        colors={['#6B1B1B', '#A64545']}
+        colors={['#0A0A0A', '#1A1A1A']}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={styles.container}
@@ -353,7 +353,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: '#A64545',
+    backgroundColor: '#2A2A2A',
     borderTopWidth: 1,
     borderTopColor: 'rgba(0, 0, 0, 0.1)',
   },
