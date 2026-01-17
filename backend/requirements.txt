@@ -15,6 +15,7 @@ alembic>=1.13.1
 # ML / ASR
 transformers>=4.36.2
 torch>=2.0.0
+torchaudio>=2.0.0
 accelerate>=0.25.0
 
 # Speaker Diarization (Agent 1)
