@@ -12,7 +12,10 @@
       "Skill(code-review)",
       "Bash(python -m pytest:*)",
       "Skill(systematic-debugging)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(python3:*)",
+      "Bash(curl:*)",
+      "Bash(git pull)"
     ]
   }
 }

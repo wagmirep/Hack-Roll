@@ -179,22 +179,34 @@ class UserWordCountResponse(BaseModel):
     emoji: Optional[str] = None
 
 
+class TopWordResponse(BaseModel):
+    """Top word information"""
+    word: str
+    count: int
+
+
 class UserResultResponse(BaseModel):
     """User's results in a session"""
+    speaker_id: str  # Unique identifier for this speaker in the session
     user_id: Optional[UUID4] = None  # None for guest users
     username: Optional[str] = None
+    name: Optional[str] = None  # Display name or guest name
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
     is_guest: bool = False
     word_counts: List[UserWordCountResponse]
     total_words: int
+    top_word: Optional[TopWordResponse] = None
 
 
 class SessionResultsResponse(BaseModel):
     """Complete session results"""
     session_id: UUID4
     status: str
-    users: List[UserResultResponse]
+    duration_seconds: int
+    total_words: int
+    total_singlish_words: int
+    speakers: List[UserResultResponse]  # Renamed from users for frontend compatibility
     all_claimed: bool
 
 

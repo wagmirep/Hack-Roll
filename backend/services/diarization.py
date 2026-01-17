@@ -36,45 +36,118 @@ from dataclasses import dataclass
 from typing import List, Optional
 from threading import Lock
 
+# Initialize logger FIRST - before any code that might use it
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# PyTorch 2.6+ COMPATIBILITY FIX
+# =============================================================================
+# PyTorch 2.6 changed default weights_only=True in torch.load(), which breaks
+# pyannote model loading. We need to add pyannote classes to the safe globals
+# whitelist BEFORE any model loading occurs.
+
 import torch
 import torch.serialization
 
-# =============================================================================
-# PyTorch 2.6+ COMPATIBILITY FIX - MUST BE BEFORE ANY PYANNOTE IMPORT
-# =============================================================================
-# PyTorch 2.6 changed default weights_only=True in torch.load(), which breaks
-# pyannote model loading. We use multiple approaches to ensure compatibility:
-#
-# 1. Add TorchVersion to safe globals (required by some checkpoints)
-# 2. Monkey-patch torch.load to default weights_only=False
-# 3. Also patch torch.serialization.load for internal calls
-
-# Approach 1: Add safe globals
+# Step 1: Import pyannote modules and add their classes to safe globals
+# This MUST happen before any model loading
 try:
-    torch.serialization.add_safe_globals([torch.torch_version.TorchVersion])
-except (AttributeError, TypeError):
-    pass  # Older PyTorch versions
+    from torch.serialization import add_safe_globals
+    
+    # Add TorchVersion to safe globals (required for some model files)
+    try:
+        add_safe_globals([torch.torch_version.TorchVersion])
+    except (AttributeError, TypeError):
+        pass
+    
+    # Import pyannote classes and add them to safe globals
+    try:
+        import pyannote.audio.core.task
+        import pyannote.audio.core.model
+        
+        # Collect all classes from pyannote.audio.core.task
+        pyannote_classes = []
+        for attr_name in dir(pyannote.audio.core.task):
+            attr = getattr(pyannote.audio.core.task, attr_name, None)
+            if isinstance(attr, type):
+                pyannote_classes.append(attr)
+        
+        # Specifically ensure Specifications is included
+        if hasattr(pyannote.audio.core.task, 'Specifications'):
+            if pyannote.audio.core.task.Specifications not in pyannote_classes:
+                pyannote_classes.append(pyannote.audio.core.task.Specifications)
+        
+        # Add Model class if available
+        if hasattr(pyannote.audio.core.model, 'Model'):
+            pyannote_classes.append(pyannote.audio.core.model.Model)
+        
+        # Add all collected classes to safe globals
+        if pyannote_classes:
+            add_safe_globals(pyannote_classes)
+            logger.info(f"Added {len(pyannote_classes)} pyannote classes to torch safe globals")
+            
+    except ImportError as e:
+        logger.warning(f"Could not import pyannote for safe globals setup: {e}")
+        
+except ImportError:
+    logger.info("torch.serialization.add_safe_globals not available (older PyTorch version)")
 
-# Approach 2 & 3: Patch both torch.load and torch.serialization.load
+# Step 2: AGGRESSIVELY patch torch.load to ALWAYS use weights_only=False
+# This is necessary because pyannote/lightning may explicitly pass weights_only=True
 _original_torch_load = torch.load
-_original_serialization_load = torch.serialization.load
 
 def _patched_torch_load(*args, **kwargs):
-    kwargs.setdefault('weights_only', False)
+    """Patched torch.load that FORCES weights_only=False for pyannote compatibility."""
+    # ALWAYS override weights_only to False, regardless of what was passed
+    kwargs['weights_only'] = False
     return _original_torch_load(*args, **kwargs)
 
+torch.load = _patched_torch_load
+
+# Also patch torch.serialization.load which is used internally
+_original_serialization_load = torch.serialization.load
+
 def _patched_serialization_load(*args, **kwargs):
-    kwargs.setdefault('weights_only', False)
+    """Patched serialization.load that FORCES weights_only=False."""
+    kwargs['weights_only'] = False
     return _original_serialization_load(*args, **kwargs)
 
-torch.load = _patched_torch_load
 torch.serialization.load = _patched_serialization_load
+
+# Step 3: Patch lightning.fabric if present (pyannote uses pytorch-lightning)
+try:
+    import lightning.fabric.utilities.cloud_io as cloud_io
+    if hasattr(cloud_io, '_load'):
+        _original_lightning_load = cloud_io._load
+        
+        def _patched_lightning_load(f, map_location=None, weights_only=None):
+            # Always use weights_only=False for pyannote models
+            return _original_torch_load(f, map_location=map_location, weights_only=False)
+        
+        cloud_io._load = _patched_lightning_load
+        logger.info("Patched lightning cloud_io._load for PyTorch 2.6 compatibility")
+except (ImportError, AttributeError):
+    pass  # Lightning not installed or different version
+
+# Step 4: Patch huggingface_hub's torch loading if present
+try:
+    import huggingface_hub.serialization._torch as hf_torch
+    if hasattr(hf_torch, '_load_state_dict_from_file'):
+        _original_hf_load = hf_torch._load_state_dict_from_file
+        
+        def _patched_hf_load(filename, **kwargs):
+            kwargs['weights_only'] = False
+            return _original_hf_load(filename, **kwargs)
+        
+        hf_torch._load_state_dict_from_file = _patched_hf_load
+        logger.info("Patched huggingface_hub torch loading for PyTorch 2.6 compatibility")
+except (ImportError, AttributeError):
+    pass
 # =============================================================================
 
+# Import other dependencies
 import soundfile as sf
 import numpy as np
-
-logger = logging.getLogger(__name__)
 
 # Model singleton - cached after first load
 _pipeline = None
@@ -142,13 +215,33 @@ def get_diarization_pipeline():
         logger.info(f"Loading diarization model: {MODEL_NAME}")
 
         try:
-            # torch.load is already patched at module level for PyTorch 2.6+ compat
             from pyannote.audio import Pipeline
-
+            
+            # Ensure pyannote classes are in safe globals (may have been added at module load)
+            # Re-add here in case module was imported before torch was configured
+            try:
+                from torch.serialization import add_safe_globals
+                import pyannote.audio.core.task
+                
+                pyannote_classes = []
+                for attr_name in dir(pyannote.audio.core.task):
+                    attr = getattr(pyannote.audio.core.task, attr_name, None)
+                    if isinstance(attr, type):
+                        pyannote_classes.append(attr)
+                
+                if pyannote_classes:
+                    add_safe_globals(pyannote_classes)
+                    logger.info(f"Re-added {len(pyannote_classes)} pyannote classes to safe globals before loading")
+            except ImportError:
+                pass  # Older PyTorch without add_safe_globals
+            
+            # Load the pipeline - our patched torch.load will handle weights_only
+            logger.info("Loading pipeline from pretrained model...")
             pipeline = Pipeline.from_pretrained(
                 MODEL_NAME,
                 token=hf_token
             )
+            logger.info("Pipeline loaded successfully")
 
             # Move to GPU if available
             if torch.cuda.is_available():
