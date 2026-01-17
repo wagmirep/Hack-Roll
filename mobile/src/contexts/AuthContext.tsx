@@ -14,8 +14,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Safety timeout: ensure loading never stays true forever
+    const safetyTimeout = setTimeout(() => {
+      console.warn('Loading timeout reached - forcing loading state to false');
+      setLoading(false);
+    }, 15000); // 15 second max loading time
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('Initial session check:', session?.user?.id ? 'Session found' : 'No session');
       setSession(session);
       setUser(session?.user ?? null);
       if (session) {
@@ -23,6 +30,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setLoading(false);
       }
+    }).catch((error) => {
+      console.error('Error getting initial session:', error);
+      setLoading(false);
     });
 
     // Listen for auth changes
@@ -36,20 +46,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           setProfile(null);
           setGroups([]);
+          setLoading(false);
         }
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(safetyTimeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchProfile = async () => {
     try {
+      console.log('Fetching profile from API...');
       const data = await api.auth.getMe();
+      console.log('Profile fetched successfully:', data.profile?.username);
       setProfile(data.profile);
       setGroups(data.groups || []);
     } catch (error) {
       console.error('Error fetching profile:', error);
+      // If profile fetch fails, still allow user to use the app
+      // They have a valid session, just can't reach the backend right now
+      console.warn('Continuing without profile data - backend may be unreachable');
+      setProfile(null);
+      setGroups([]);
     } finally {
       setLoading(false);
     }
