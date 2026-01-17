@@ -11,7 +11,7 @@ Post-processing (corrections, word counting) handled by Agent 3.
 import os
 import re
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 from threading import Lock
 
 logger = logging.getLogger(__name__)
@@ -105,6 +105,49 @@ def get_transcriber():
             raise RuntimeError(f"Failed to load transcription model: {e}") from e
 
 
+def _clean_model_output(text: str) -> str:
+    """
+    Clean raw model output by removing prompt templates and artifacts.
+
+    MERaLiON outputs include the chat template, speaker markers, and
+    sometimes bracketed words that need to be cleaned before processing.
+
+    Args:
+        text: Raw model output
+
+    Returns:
+        Cleaned transcription text
+    """
+    if not text:
+        return text
+
+    result = text
+
+    # Remove everything up to and including "model\n" (chat template prefix)
+    if "model\n" in result:
+        result = result.split("model\n", 1)[-1]
+
+    # Remove speaker markers like <Speaker1>:, <Speaker2>:, etc.
+    result = re.sub(r'<Speaker\d+>:\s*', '', result)
+
+    # Remove <SpeechHere> tags
+    result = re.sub(r'<SpeechHere>', '', result)
+
+    # Clean bracketed words: !(walao)! -> walao, (lah) -> lah
+    result = re.sub(r'!\(([^)]+)\)!', r'\1', result)  # !(word)! -> word
+    result = re.sub(r'\(([a-zA-Z]+)\)', r'\1', result)  # (word) -> word
+
+    # Remove filler markers
+    result = re.sub(r'\(err\)', '', result, flags=re.IGNORECASE)
+    result = re.sub(r'\(uh\)', '', result, flags=re.IGNORECASE)
+    result = re.sub(r'\(um\)', '', result, flags=re.IGNORECASE)
+
+    # Clean up extra whitespace
+    result = re.sub(r'\s+', ' ', result).strip()
+
+    return result
+
+
 def _transcribe_audio_array(audio_data, sample_rate: int = SAMPLE_RATE) -> str:
     """
     Internal function to transcribe audio array using model directly.
@@ -164,6 +207,9 @@ def _transcribe_audio_array(audio_data, sample_rate: int = SAMPLE_RATE) -> str:
 
     # Decode
     transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+
+    # Clean model output artifacts
+    transcription = _clean_model_output(transcription)
 
     return transcription.strip()
 
@@ -303,8 +349,12 @@ def unload_model() -> None:
 # Corrections dictionary for common ASR misrecognitions
 # Maps misrecognized phrases -> correct Singlish word
 CORRECTIONS: Dict[str, str] = {
-    # Walao variations (multi-word first)
+    # =========================================================================
+    # WALAO VARIATIONS (17 patterns)
+    # =========================================================================
     'while up': 'walao',
+    'wah lao eh': 'walao',
+    'wa lao eh': 'walao',
     'wah lao': 'walao',
     'wa lao': 'walao',
     'wah low': 'walao',
@@ -312,36 +362,185 @@ CORRECTIONS: Dict[str, str] = {
     'while ah': 'walao',
     'wah lau': 'walao',
     'wa lau': 'walao',
-    # Vulgar - cheebai variations
+    'wah liao': 'walao',
+    'wa liao': 'walao',
+    'while low': 'walao',
+    'wah lei': 'walao',
+    'why lao': 'walao',
+    'why low': 'walao',
+    'wah la': 'walao',
+
+    # =========================================================================
+    # VULGAR - CHEEBAI VARIATIONS (10 patterns)
+    # =========================================================================
     'cheap buy': 'cheebai',
     'chee bye': 'cheebai',
     'chi bye': 'cheebai',
     'chee bai': 'cheebai',
     'chi bai': 'cheebai',
-    # Vulgar - lanjiao variations
+    'chee by': 'cheebai',
+    'chi by': 'cheebai',
+    'cb': 'cheebai',
+    'c b': 'cheebai',
+    'see bee': 'cheebai',
+
+    # =========================================================================
+    # VULGAR - LANJIAO VARIATIONS (8 patterns)
+    # =========================================================================
     'lunch hour': 'lanjiao',
     'lan jiao': 'lanjiao',
     'lan chow': 'lanjiao',
     'lan chiao': 'lanjiao',
-    # Paiseh variations
+    'lun jiao': 'lanjiao',
+    'lan chio': 'lanjiao',
+    'lunchow': 'lanjiao',
+    'lan jio': 'lanjiao',
+
+    # =========================================================================
+    # VULGAR - KANINA VARIATIONS (6 patterns)
+    # =========================================================================
+    'can nina': 'kanina',
+    'kar ni na': 'kanina',
+    'ka ni na': 'kanina',
+    'car nina': 'kanina',
+    'knn': 'kanina',
+    'k n n': 'kanina',
+
+    # =========================================================================
+    # VULGAR - NABEI VARIATIONS (5 patterns)
+    # =========================================================================
+    'nah bay': 'nabei',
+    'na bei': 'nabei',
+    'nah bei': 'nabei',
+    'na beh': 'nabei',
+    'nah beh': 'nabei',
+
+    # =========================================================================
+    # PAISEH VARIATIONS (7 patterns)
+    # =========================================================================
     'pie say': 'paiseh',
     'pai seh': 'paiseh',
     'pie seh': 'paiseh',
     'pai say': 'paiseh',
-    # Shiok variations
+    'pie se': 'paiseh',
+    'pai se': 'paiseh',
+    'paise': 'paiseh',
+
+    # =========================================================================
+    # SHIOK VARIATIONS (5 patterns)
+    # =========================================================================
     'shook': 'shiok',
     'she ok': 'shiok',
-    # Sia variations
+    'shoe ok': 'shiok',
+    'shi ok': 'shiok',
+    'shio': 'shiok',
+
+    # =========================================================================
+    # ALAMAK VARIATIONS (5 patterns)
+    # =========================================================================
+    'ala mak': 'alamak',
+    'allah mak': 'alamak',
+    'a la mak': 'alamak',
+    'allamak': 'alamak',
+    'aller mak': 'alamak',
+
+    # =========================================================================
+    # AIYO/AIYAH VARIATIONS (8 patterns)
+    # =========================================================================
+    'ai yo': 'aiyo',
+    'ai yoh': 'aiyo',
+    'aiya': 'aiyah',
+    'ai ya': 'aiyah',
+    'eye yo': 'aiyo',
+    'aye yo': 'aiyo',
+    'ai yah': 'aiyah',
+    'eye yah': 'aiyah',
+
+    # =========================================================================
+    # JIALAT VARIATIONS (5 patterns)
+    # =========================================================================
+    'jia lat': 'jialat',
+    'gia lat': 'jialat',
+    'jia lut': 'jialat',
+    'jee ah lat': 'jialat',
+    'gia lut': 'jialat',
+
+    # =========================================================================
+    # BOJIO VARIATIONS (5 patterns)
+    # =========================================================================
+    'bo jio': 'bojio',
+    'boh jio': 'bojio',
+    'bo gio': 'bojio',
+    'never jio': 'bojio',
+    'boh gio': 'bojio',
+
+    # =========================================================================
+    # SIA VARIATIONS (4 patterns)
+    # =========================================================================
     'see ya': 'sia',
     'see ah': 'sia',
-    # Sian variations
+    'siah': 'sia',
+    'si ah': 'sia',
+
+    # =========================================================================
+    # SIAN VARIATIONS (4 patterns)
+    # =========================================================================
     'see an': 'sian',
     'si an': 'sian',
-    # Particle variations (single word - more careful matching needed)
-    'lah ': 'lah ',  # Keep space to preserve word boundary
-    'lor ': 'lor ',
-    'loh': 'lor',
-    'leh': 'lah',
+    'see en': 'sian',
+    'si en': 'sian',
+
+    # =========================================================================
+    # OTHER SINGLISH WORDS
+    # =========================================================================
+    # Kiasu/Kiasi
+    'kia su': 'kiasu',
+    'key ah su': 'kiasu',
+    'kia si': 'kiasi',
+    'key ah si': 'kiasi',
+
+    # Bodoh
+    'boh doh': 'bodoh',
+    'bo doh': 'bodoh',
+
+    # Suaku
+    'sua ku': 'suaku',
+    'swah ku': 'suaku',
+
+    # Lepak
+    'le pak': 'lepak',
+    'lay pak': 'lepak',
+
+    # Chope
+    'chop': 'chope',
+
+    # Makan
+    'ma kan': 'makan',
+
+    # Gostan
+    'go stan': 'gostan',
+    'go stun': 'gostan',
+
+    # Sibei
+    'si bei': 'sibei',
+    'see bay': 'sibei',
+    'si bay': 'sibei',
+
+    # Atas
+    'ah tas': 'atas',
+    'ar tas': 'atas',
+
+    # Kaypoh
+    'kay poh': 'kaypoh',
+    'kae poh': 'kaypoh',
+    'kpo': 'kaypoh',
+
+    # Steady
+    'steady pom pi pi': 'steady',
+
+    # Goondu
+    'goon du': 'goondu',
+    'gun du': 'goondu',
 }
 
 # Single-word corrections with word boundary checking
@@ -349,21 +548,34 @@ CORRECTIONS: Dict[str, str] = {
 # e.g., 'la' -> 'lah' but don't affect 'salah' or 'malaysia'
 WORD_CORRECTIONS: Dict[str, str] = {
     'la': 'lah',
+    'laa': 'lah',
+    'laaa': 'lah',
     'low': 'lor',
     'loh': 'lor',
     'leh': 'lah',
+    'ler': 'lah',
     'seh': 'sia',
+    'mah': 'meh',
+    'huh': 'hor',
+    'arh': 'ah',
 }
 
 # Target Singlish words to count in transcriptions
 # Add new words here when you want to track their usage
 # Words are matched case-insensitively with word boundary detection
 TARGET_WORDS = [
-    # Vulgar/Expletives
+    # =========================================================================
+    # VULGAR/EXPLETIVES
+    # =========================================================================
     'walao',
     'cheebai',
     'lanjiao',
-    # Particles
+    'kanina',
+    'nabei',
+
+    # =========================================================================
+    # PARTICLES (sentence-ending words)
+    # =========================================================================
     'lah',
     'lor',
     'sia',
@@ -371,18 +583,101 @@ TARGET_WORDS = [
     'leh',
     'hor',
     'ah',
-    # Colloquial expressions
-    'can',
+    'one',      # "confirm good one"
+    'what',     # "cannot what"
+    'lei',
+    'ma',
+
+    # =========================================================================
+    # EXCLAMATIONS
+    # =========================================================================
+    'wah',
+    'eh',
+    'aiyo',
+    'aiyah',
+    'alamak',
+
+    # =========================================================================
+    # COLLOQUIAL EXPRESSIONS
+    # =========================================================================
+    'can',      # "can or not"
+    'cannot',
     'paiseh',
     'shiok',
     'sian',
-    'alamak',
-    'aiyo',
     'bodoh',
     'kiasu',
     'kiasi',
     'bojio',
+    'suaku',
+    'lepak',
+    'blur',     # "blur like sotong"
+    'goondu',
+
+    # =========================================================================
+    # ACTIONS/VERBS
+    # =========================================================================
+    'chope',    # reserve seat
+    'kena',     # get (negative)
+    'makan',    # eat
+    'tahan',    # endure
+    'gostan',   # reverse
+    'cabut',    # run away
+    'sabo',     # sabotage
+    'arrow',    # assign task to someone
+
+    # =========================================================================
+    # INTENSIFIERS
+    # =========================================================================
+    'sibei',    # very (vulgar)
+    'buay',     # cannot/not
+    'jialat',   # serious/terrible
+
+    # =========================================================================
+    # FOOD/DRINK (common Singlish terms)
+    # =========================================================================
+    'kopi',     # coffee
+    'teh',      # tea
+    'peng',     # iced
+
+    # =========================================================================
+    # MISCELLANEOUS
+    # =========================================================================
+    'atas',     # high class
+    'kaypoh',   # busybody
+    'steady',   # cool/reliable
+    'power',    # impressive
+    'liao',     # already/finished
 ]
+
+
+def _normalize_for_matching(text: str) -> str:
+    """
+    Normalize text before correction matching and word counting.
+
+    Handles model output artifacts like bracketed words.
+
+    Args:
+        text: Text to normalize
+
+    Returns:
+        Normalized text
+    """
+    if not text:
+        return text
+
+    result = text
+
+    # Remove exclamation brackets: !(walao)! -> walao
+    result = re.sub(r'!\(([^)]+)\)!', r'\1', result)
+
+    # Remove parentheses around single words: (lah) -> lah
+    result = re.sub(r'\(([a-zA-Z]+)\)', r'\1', result)
+
+    # Normalize multiple spaces
+    result = re.sub(r'\s+', ' ', result)
+
+    return result.strip()
 
 
 def apply_corrections(text: str) -> str:
@@ -407,7 +702,8 @@ def apply_corrections(text: str) -> str:
     if not text:
         return text
 
-    result = text
+    # Normalize first
+    result = _normalize_for_matching(text)
 
     # Apply multi-word corrections first (case-insensitive)
     # Sort by length descending to match longer phrases first
@@ -452,7 +748,7 @@ def count_target_words(text: str) -> Dict[str, int]:
         return {}
 
     # Normalize text for counting
-    normalized = text.lower()
+    normalized = _normalize_for_matching(text.lower())
 
     counts: Dict[str, int] = {}
 
@@ -468,7 +764,7 @@ def count_target_words(text: str) -> Dict[str, int]:
     return counts
 
 
-def process_transcription(text: str) -> tuple[str, Dict[str, int]]:
+def process_transcription(text: str) -> Tuple[str, Dict[str, int]]:
     """
     Convenience function that applies corrections and counts words in one step.
 
@@ -485,3 +781,17 @@ def process_transcription(text: str) -> tuple[str, Dict[str, int]]:
     corrected = apply_corrections(text)
     counts = count_target_words(corrected)
     return corrected, counts
+
+
+def get_all_target_words() -> list:
+    """Return list of all target words being tracked."""
+    return TARGET_WORDS.copy()
+
+
+def get_corrections_info() -> Dict[str, int]:
+    """Return info about corrections dictionary."""
+    return {
+        "phrase_corrections": len(CORRECTIONS),
+        "word_corrections": len(WORD_CORRECTIONS),
+        "target_words": len(TARGET_WORDS),
+    }
