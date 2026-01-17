@@ -37,20 +37,38 @@ from typing import List, Optional
 from threading import Lock
 
 import torch
+import torch.serialization
 
 # =============================================================================
 # PyTorch 2.6+ COMPATIBILITY FIX - MUST BE BEFORE ANY PYANNOTE IMPORT
 # =============================================================================
 # PyTorch 2.6 changed default weights_only=True in torch.load(), which breaks
-# pyannote model loading. Patch torch.load at module level BEFORE pyannote
-# is imported anywhere, since pyannote caches torch.load reference at import time.
+# pyannote model loading. We use multiple approaches to ensure compatibility:
+#
+# 1. Add TorchVersion to safe globals (required by some checkpoints)
+# 2. Monkey-patch torch.load to default weights_only=False
+# 3. Also patch torch.serialization.load for internal calls
+
+# Approach 1: Add safe globals
+try:
+    torch.serialization.add_safe_globals([torch.torch_version.TorchVersion])
+except (AttributeError, TypeError):
+    pass  # Older PyTorch versions
+
+# Approach 2 & 3: Patch both torch.load and torch.serialization.load
 _original_torch_load = torch.load
+_original_serialization_load = torch.serialization.load
 
 def _patched_torch_load(*args, **kwargs):
     kwargs.setdefault('weights_only', False)
     return _original_torch_load(*args, **kwargs)
 
+def _patched_serialization_load(*args, **kwargs):
+    kwargs.setdefault('weights_only', False)
+    return _original_serialization_load(*args, **kwargs)
+
 torch.load = _patched_torch_load
+torch.serialization.load = _patched_serialization_load
 # =============================================================================
 
 import soundfile as sf
