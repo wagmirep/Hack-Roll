@@ -66,7 +66,7 @@ export default function SignupScreen({ navigation }: Props) {
 
   return (
     <LinearGradient
-      colors={['#6B1B1B', '#A64545']}
+      colors={['#0A0A0A', '#1A1A1A']}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
       style={styles.container}

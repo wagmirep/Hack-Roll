@@ -33,45 +33,32 @@ const SINGLISH_MESSAGES = [
 
 export default function ProcessingScreen({ navigation, route }: Props) {
   const { sessionId } = route.params;
-  // const { status, progress, error } = useSessionStatus(sessionId);
-
-  // TEMPORARY: Fake loading progress
-  const [fakeProgress, setFakeProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const progress = fakeProgress;
+  
+  // Real backend status polling
+  const { status, progress, error, session } = useSessionStatus(sessionId, {
+    pollInterval: 2000, // Poll every 2 seconds
+    stopOnStatus: ['ready_for_claiming', 'completed', 'failed'],
+  });
 
   const spinValue = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
   const [messageIndex, setMessageIndex] = useState(0);
 
-  // TEMPORARY: Fake progress increment
+  // Navigate to Wrapped screen when processing is complete
   useEffect(() => {
-    const interval = setInterval(() => {
-      setFakeProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          // Navigate to Wrapped screen after a short delay
-          setTimeout(() => {
-            navigation.replace('Wrapped', { sessionId });
-          }, 500);
-          return 100;
-        }
-        // Increment by 1% every 100ms (complete in ~10 seconds)
-        return prev + 1;
-      });
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, [navigation, sessionId]);
-
-  // useEffect(() => {
-  //   if (status === 'ready_for_claiming' || status === 'completed') {
-  //     // Navigate to Wrapped screen with session data
-  //     navigation.replace('Wrapped', { sessionId });
-  //   } else if (status === 'error') {
-  //     // Stay on screen to show error
-  //   }
-  // }, [status, sessionId, navigation]);
+    console.log(`ProcessingScreen: status=${status}, progress=${progress}`);
+    
+    if (status === 'ready_for_claiming' || status === 'completed') {
+      console.log('Processing complete! Navigating to Wrapped screen...');
+      // Small delay to show 100% before navigating
+      setTimeout(() => {
+        navigation.replace('Wrapped', { sessionId });
+      }, 500);
+    } else if (status === 'failed') {
+      console.error('Session processing failed:', error);
+      // Stay on screen to show error
+    }
+  }, [status, sessionId, navigation, progress, error]);
 
   useEffect(() => {
     // Spinning animation - use sequence with reset to ensure continuous loop
@@ -136,7 +123,7 @@ export default function ProcessingScreen({ navigation, route }: Props) {
 
   return (
     <LinearGradient
-      colors={['#6B1B1B', '#A64545']}
+      colors={['#0A0A0A', '#1A1A1A']}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
       style={styles.container}
@@ -151,6 +138,7 @@ export default function ProcessingScreen({ navigation, route }: Props) {
                 style={styles.logoImage}
                 resizeMode="cover"
               />
+              <View style={styles.greyOverlay} />
             </View>
           </View>
 
@@ -233,7 +221,7 @@ const styles = StyleSheet.create({
     borderRadius: 80,
     borderWidth: 5,
     borderColor: '#FFFFFF',
-    backgroundColor: '#ED4545',
+    backgroundColor: '#4A4A4A',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
@@ -241,6 +229,14 @@ const styles = StyleSheet.create({
   logoImage: {
     width: '100%',
     height: '100%',
+  },
+  greyOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(128, 128, 128, 0.7)',
   },
   title: {
     fontSize: 28,
