@@ -20,7 +20,8 @@ from schemas import (
     ChunkUploadResponse, SpeakersListResponse, SpeakerResponse,
     ClaimSpeakerRequest, ClaimSpeakerResponse, SessionResultsResponse,
     UserResultResponse, UserWordCountResponse, SpeakerWordCountResponse,
-    SessionHistoryResponse, UserSessionStatsResponse, SessionComparisonResponse
+    SessionHistoryResponse, UserSessionStatsResponse, SessionComparisonResponse,
+    TopWordResponse
 )
 from storage import storage
 import uuid
@@ -241,14 +242,14 @@ async def upload_chunk(
                     detail="Not authorized to upload to this session"
                 )
 
-        # Get next chunk number
-        chunk_count = db.query(AudioChunk).filter(
+        # Get next chunk number (use MAX + 1 to avoid race conditions)
+        max_chunk = db.query(func.max(AudioChunk.chunk_number)).filter(
             AudioChunk.session_id == session_id
-        ).count()
-        chunk_number = chunk_count + 1
+        ).scalar()
+        chunk_number = (max_chunk or 0) + 1
 
         logger.info(f"Uploading chunk #{chunk_number} for session {session_id}")
-        logger.info(f"   Total chunks so far: {chunk_count}")
+        logger.info(f"   Current max chunk number: {max_chunk or 0}")
 
         # Read file content (needed for both storage upload and background transcription)
         file_content = await file.read()
@@ -263,17 +264,38 @@ async def upload_chunk(
 
         # Save chunk record
         chunk_duration = duration_seconds if duration_seconds else 30.0
-        chunk = AudioChunk(
-            session_id=session_id,
-            chunk_number=chunk_number,
-            storage_path=storage_path,
-            duration_seconds=chunk_duration
-        )
-        db.add(chunk)
-        db.commit()
-
-        logger.info(f"Chunk #{chunk_number} record saved to database")
-        logger.info(f"   Session now has {chunk_number} chunk(s)")
+        
+        # Try to insert, handle duplicate gracefully
+        try:
+            chunk = AudioChunk(
+                session_id=session_id,
+                chunk_number=chunk_number,
+                storage_path=storage_path,
+                duration_seconds=chunk_duration
+            )
+            db.add(chunk)
+            db.commit()
+            logger.info(f"Chunk #{chunk_number} record saved to database")
+            logger.info(f"   Session now has {chunk_number} chunk(s)")
+        except Exception as e:
+            db.rollback()
+            # Check if it's a duplicate key error
+            if "duplicate key" in str(e).lower() or "uniqueviolation" in str(type(e).__name__).lower():
+                logger.warning(f"Chunk #{chunk_number} already exists (duplicate upload)")
+                # Return existing chunk info
+                existing_chunk = db.query(AudioChunk).filter(
+                    AudioChunk.session_id == session_id,
+                    AudioChunk.chunk_number == chunk_number
+                ).first()
+                if existing_chunk:
+                    logger.info(f"Returning existing chunk #{chunk_number}")
+                    return ChunkUploadResponse(
+                        chunk_number=existing_chunk.chunk_number,
+                        uploaded=True,
+                        storage_path=existing_chunk.storage_path
+                    )
+            # Re-raise if not a duplicate key error
+            raise
 
         # Trigger background transcription (fire-and-forget)
         # Don't await - let it run in background while we return response
@@ -770,7 +792,8 @@ async def get_session_results(
         user_stats[wc.user_id]["total"] += wc.count
 
     # Build registered user results
-    users = []
+    speakers = []
+    speaker_counter = 0
     for user_id, stats in user_stats.items():
         profile = db.query(Profile).filter(Profile.id == user_id).first()
         if profile:
@@ -782,16 +805,27 @@ async def get_session_results(
                 )
                 for word, count in stats["word_counts"].items()
             ]
+            
+            # Find top word
+            top_word = None
+            if word_count_list:
+                sorted_words = sorted(word_count_list, key=lambda x: x.count, reverse=True)
+                top = sorted_words[0]
+                top_word = TopWordResponse(word=top.word, count=top.count)
 
-            users.append(UserResultResponse(
+            speakers.append(UserResultResponse(
+                speaker_id=f"speaker_{speaker_counter}",
                 user_id=profile.id,
                 username=profile.username,
+                name=profile.display_name or profile.username,
                 display_name=profile.display_name,
                 avatar_url=profile.avatar_url,
                 is_guest=False,
                 word_counts=word_count_list,
-                total_words=stats["total"]
+                total_words=stats["total"],
+                top_word=top_word
             ))
+            speaker_counter += 1
 
     # Get guest speakers (claim_type='guest')
     guest_speakers = db.query(SessionSpeaker).filter(
@@ -816,26 +850,53 @@ async def get_session_results(
         ]
 
         total_words = sum(wc.count for wc in guest_word_counts)
+        
+        # Find top word
+        top_word = None
+        if word_count_list:
+            sorted_words = sorted(word_count_list, key=lambda x: x.count, reverse=True)
+            top = sorted_words[0]
+            top_word = TopWordResponse(word=top.word, count=top.count)
 
-        users.append(UserResultResponse(
+        speakers.append(UserResultResponse(
+            speaker_id=f"speaker_{speaker_counter}",
             user_id=None,
             username=None,
+            name=guest_speaker.guest_name,
             display_name=guest_speaker.guest_name,
             avatar_url=None,
             is_guest=True,
             word_counts=word_count_list,
-            total_words=total_words
+            total_words=total_words,
+            top_word=top_word
         ))
+        speaker_counter += 1
 
     # Check if all speakers are claimed
     all_claimed = db.query(SessionSpeaker).filter(
         SessionSpeaker.session_id == session_id,
         SessionSpeaker.claimed_by == None
     ).count() == 0
+    
+    # Calculate totals
+    total_words = sum(s.total_words for s in speakers)
+    
+    # Calculate total singlish words using target_words already fetched above
+    singlish_words_set = {word.lower() for word in target_words.keys()}
+    
+    # Calculate total singlish words across all speakers
+    total_singlish_words = 0
+    for speaker in speakers:
+        for wc in speaker.word_counts:
+            if wc.word.lower() in singlish_words_set:
+                total_singlish_words += wc.count
 
     return SessionResultsResponse(
         session_id=session_id,
         status=session.status,
-        users=users,
+        duration_seconds=session.duration_seconds or 0,
+        total_words=total_words,
+        total_singlish_words=total_singlish_words,
+        speakers=speakers,
         all_claimed=all_claimed
     )

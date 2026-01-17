@@ -125,10 +125,10 @@ export function useRecording(): UseRecordingResult {
         setDuration(d => d + 1);
       }, 1000);
 
-      // Upload chunks every 30 seconds (reuse sessId declared above)
+      // Upload chunks every 5 seconds (reuse sessId declared above)
       chunkIntervalRef.current = setInterval(() => {
         uploadCurrentChunk(sessId);
-      }, 30000);
+      }, 5000);
 
     } catch (err: any) {
       console.error('Error starting recording:', err);
@@ -141,6 +141,13 @@ export function useRecording(): UseRecordingResult {
     if (!recordingRef.current) return;
 
     try {
+      // Get status first to check if recording is still active
+      const status = await recordingRef.current.getStatusAsync();
+      if (!status.canRecord && !status.isRecording) {
+        console.log('⚠️  Recording already stopped, skipping chunk upload');
+        return;
+      }
+
       // Stop current recording
       await recordingRef.current.stopAndUnloadAsync();
       const uri = recordingRef.current.getURI();
@@ -151,9 +158,9 @@ export function useRecording(): UseRecordingResult {
         const fileExtension = isWeb ? 'webm' : 'wav';
         const mimeType = isWeb ? 'audio/webm' : 'audio/wav';
         
-        // Create form data with duration (30 seconds for periodic chunks)
+        // Create form data with duration (5 seconds for periodic chunks)
         const formData = new FormData();
-        formData.append('duration_seconds', '30');
+        formData.append('duration_seconds', '5');
         
         if (isWeb) {
           // On web, fetch the blob and create a proper File object
@@ -237,11 +244,27 @@ export function useRecording(): UseRecordingResult {
         console.log('🔴 Duration interval cleared');
       }
 
+      // Wait a moment to ensure intervals are cleared and won't trigger
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       console.log('🔴 Stopping recording...');
-      // Stop recording and upload final chunk (without restarting)
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      console.log('🔴 Recording stopped, URI:', uri);
+      // Check if recording is still active before stopping
+      const status = await recordingRef.current.getStatusAsync();
+      console.log('🔴 Recording status:', status);
+      
+      let uri: string | null = null;
+      
+      // Only call stopAndUnloadAsync if actively recording
+      // isDoneRecording: true means it's already stopped/unloaded (likely by chunk upload)
+      if (status.isRecording) {
+        console.log('🔴 Recording is active, stopping now...');
+        await recordingRef.current.stopAndUnloadAsync();
+        uri = recordingRef.current.getURI();
+        console.log('🔴 Recording stopped, URI:', uri);
+      } else {
+        console.log('🔴 Recording already stopped/done, getting URI...');
+        uri = recordingRef.current.getURI();
+      }
 
       if (uri) {
         console.log('🔴 Uploading final chunk...');
@@ -262,11 +285,11 @@ export function useRecording(): UseRecordingResult {
             finalChunkDuration = Math.round(timeSinceLastUpload);
           } else {
             // Fallback to modulo calculation
-            finalChunkDuration = (duration % 30) || 30;
+            finalChunkDuration = (duration % 5) || 5;
           }
           
-          // Ensure duration is at least 1 second and reasonable
-          finalChunkDuration = Math.max(1, Math.min(finalChunkDuration, 30));
+          // Ensure duration is at least 1 second and reasonable (5 seconds max for 5s chunks)
+          finalChunkDuration = Math.max(1, Math.min(finalChunkDuration, 5));
           
           console.log('🔴 Platform:', isWeb ? 'web' : 'mobile', '| Format:', mimeType, '| Duration:', finalChunkDuration, 'seconds');
           
