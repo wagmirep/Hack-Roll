@@ -12,7 +12,7 @@
 **Status:** Planned (0/3 plans complete)
 
 **Delivers:**
-- ⏳ Backend deployed to Railway (Plan 06-01)
+- ⏳ Backend deployed to Fly.io (Plan 06-01)
 - ⏳ Expo web frontend deployed to Vercel (Plan 06-02)
 - ⏳ QR code for judges to scan (Plan 06-03)
 
@@ -22,7 +22,7 @@
 - `docs/demo-qr.png` — QR code for demo (to create)
 
 **Plans:**
-- ⏳ 06-01: Backend Deployment (Railway)
+- ⏳ 06-01: Backend Deployment (Fly.io)
 - ⏳ 06-02: Frontend Deployment (Vercel)
 - ⏳ 06-03: QR Code and Documentation
 
