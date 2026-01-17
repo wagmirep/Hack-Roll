@@ -71,7 +71,9 @@ export default function ResultsScreen({ navigation, route }: Props) {
   if (loading) {
     return (
       <LinearGradient
-        colors={['#F5A8A8', '#F5A8A8']}
+        colors={['#6B1B1B', '#A64545']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
         style={styles.container}
       >
         <SafeAreaView style={styles.safeArea}>
@@ -101,7 +103,9 @@ export default function ResultsScreen({ navigation, route }: Props) {
 
   return (
     <LinearGradient
-      colors={['#F5A8A8', '#F5A8A8']}
+      colors={['#6B1B1B', '#A64545']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
       style={styles.container}
     >
       <SafeAreaView style={styles.safeArea}>
@@ -160,11 +164,11 @@ export default function ResultsScreen({ navigation, route }: Props) {
         {/* Bottom Navigation Bar */}
         <View style={styles.bottomNav}>
           <TouchableOpacity style={styles.navIconButton}>
-            <Text style={styles.navIcon}>🔊</Text>
+            <Text style={styles.navIcon}>♪</Text>
           </TouchableOpacity>
 
           <View style={styles.trophyBadge}>
-            <Text style={styles.trophyIcon}>🏆</Text>
+            <Text style={styles.trophyIcon}>#</Text>
             <Text style={styles.trophyNumber}>
               {selectedSpeaker?.ranking || 1}
             </Text>
@@ -349,7 +353,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: '#F5A8A8',
+    backgroundColor: '#A64545',
     borderTopWidth: 1,
     borderTopColor: 'rgba(0, 0, 0, 0.1)',
   },
