@@ -40,7 +40,7 @@ claude plugin install frontend-design
 claude plugin install code-simplifier
 
 # Superpowers - comprehensive skill library
-claude plugin marketplace add ora-superpowers
+claude plugin marketplace add obra-superpowers
 claude plugin install superpowers
 ```
 
