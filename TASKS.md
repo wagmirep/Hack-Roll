@@ -21,7 +21,6 @@
 | Task | Assigned | Branch | Started |
 |------|----------|--------|---------|
 | Backend API Implementation | Unassigned | — | — |
-| Frontend Auth Debugging | Winston | — | Jan 17, 2026 |
 
 ### 🟢 Ready for PR
 
@@ -48,6 +47,7 @@
 | Mobile Environment Setup | Winston | Jan 17, 2026 |
 | Signup Success Screen | Winston | Jan 17, 2026 |
 | Three-Way Claiming System (Backend) | AI Assistant | Jan 17, 2026 |
+| Supabase Auth Session Management Fix | AI Assistant | Jan 17, 2026 |
 
 ---
 
@@ -328,6 +328,7 @@ Copy this when adding new tasks:
 - [2026-01-17 23:35] **Current Status** - Mobile app running, database schema deployed, debugging 401 auth errors (likely email confirmation setting)
 - [2026-01-17 23:45] **Signup Success Screen Implemented** ✅ - Added dedicated success screen after signup with email verification message, 5-second countdown, and auto-redirect to login page. Beautiful animated UI with success checkmark.
 - [2026-01-17] **🎯 THREE-WAY CLAIMING SYSTEM IMPLEMENTED** ✅ - Major feature update! Speaker claiming now supports three modes: (1) Claim as yourself, (2) Tag as another registered user, (3) Tag as guest participant. See details below.
+- [2026-01-17 17:10] **🔧 SUPABASE AUTH SESSION MANAGEMENT FIXED** ✅ - Fixed critical session timeout issues on page refresh. Root cause: AsyncStorage doesn't work in web browsers, causing getSession() to hang indefinitely. Solution: Platform-aware storage (localStorage for web, AsyncStorage for native). Also added timeout protection (3s) with proper error handling and state cleanup to prevent stuck loading screens. Auth flow now works seamlessly on web and will work on native devices.
 
 ### 📱 Mobile App Status
 
