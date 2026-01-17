@@ -14,6 +14,31 @@ export interface UseRecordingResult {
   requestPermission: () => Promise<boolean>;
 }
 
+// Recording configuration - reusable across buffers
+const RECORDING_OPTIONS = {
+  android: {
+    extension: '.wav',
+    outputFormat: Audio.AndroidOutputFormat.DEFAULT,
+    audioEncoder: Audio.AndroidAudioEncoder.DEFAULT,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    bitRate: 128000,
+  },
+  ios: {
+    extension: '.wav',
+    audioQuality: Audio.IOSAudioQuality.HIGH,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+  web: {
+    mimeType: 'audio/webm',
+    bitsPerSecond: 128000,
+  },
+};
+
 export function useRecording(): UseRecordingResult {
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -22,12 +47,27 @@ export function useRecording(): UseRecordingResult {
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [chunksUploaded, setChunksUploaded] = useState(0);
 
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  // Double buffering: two recording instances that alternate
+  const bufferA = useRef<Audio.Recording | null>(null);
+  const bufferB = useRef<Audio.Recording | null>(null);
+  const activeBuffer = useRef<'A' | 'B'>('A'); // Track which buffer is currently recording
+  
   const chunkIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const chunkNumber = useRef(0);
   const currentGroupId = useRef<string>('');
-  const lastChunkUploadTime = useRef<number>(0); // Track when last chunk was uploaded
+  const lastChunkUploadTime = useRef<number>(0);
+  const isSwapping = useRef(false); // Prevent concurrent swaps
+
+  // Helper to get active recording ref
+  const getActiveRecording = () => {
+    return activeBuffer.current === 'A' ? bufferA.current : bufferB.current;
+  };
+
+  // Helper to get inactive buffer ref
+  const getInactiveBufferRef = () => {
+    return activeBuffer.current === 'A' ? bufferB : bufferA;
+  };
 
   // Cleanup on unmount
   useEffect(() => {
@@ -38,8 +78,12 @@ export function useRecording(): UseRecordingResult {
       if (durationIntervalRef.current) {
         clearInterval(durationIntervalRef.current);
       }
-      if (recordingRef.current) {
-        recordingRef.current.stopAndUnloadAsync().catch(console.error);
+      // Clean up both buffers
+      if (bufferA.current) {
+        bufferA.current.stopAndUnloadAsync().catch(console.error);
+      }
+      if (bufferB.current) {
+        bufferB.current.stopAndUnloadAsync().catch(console.error);
       }
     };
   }, []);
@@ -55,6 +99,13 @@ export function useRecording(): UseRecordingResult {
       setError('Failed to request microphone permission');
       return false;
     }
+  };
+
+  // Create and prepare a new recording instance
+  const createRecording = async (): Promise<Audio.Recording> => {
+    const recording = new Audio.Recording();
+    await recording.prepareToRecordAsync(RECORDING_OPTIONS);
+    return recording;
   };
 
   const startRecording = async (groupId?: string | null): Promise<void> => {
@@ -82,53 +133,44 @@ export function useRecording(): UseRecordingResult {
       console.log('🟢 Creating session in backend with groupId:', groupId || null);
       const session = await api.sessions.create(groupId || null);
       console.log('🟢 Session created:', session);
-      // Backend returns 'id' not 'session_id'
       const sessId = session.id || session.session_id;
       console.log('🟢 Session ID:', sessId);
       setSessionId(sessId);
-      console.log('🟢 sessionId state updated to:', sessId);
 
-      // Prepare recording
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync({
-        android: {
-          extension: '.wav',
-          outputFormat: Audio.AndroidOutputFormat.DEFAULT,
-          audioEncoder: Audio.AndroidAudioEncoder.DEFAULT,
-          sampleRate: 16000,
-          numberOfChannels: 1,
-          bitRate: 128000,
-        },
-        ios: {
-          extension: '.wav',
-          audioQuality: Audio.IOSAudioQuality.HIGH,
-          sampleRate: 16000,
-          numberOfChannels: 1,
-          linearPCMBitDepth: 16,
-          linearPCMIsBigEndian: false,
-          linearPCMIsFloat: false,
-        },
-        web: {
-          mimeType: 'audio/webm',
-          bitsPerSecond: 128000,
-        },
-      });
-
+      // Prepare buffer A as the active recording
+      console.log('🟢 Preparing buffer A...');
+      const recording = await createRecording();
       await recording.startAsync();
-      recordingRef.current = recording;
+      bufferA.current = recording;
+      activeBuffer.current = 'A';
+      
+      // Pre-prepare buffer B so it's ready for fast swap
+      console.log('🟢 Pre-preparing buffer B for double buffering...');
+      try {
+        const bufferBRecording = await createRecording();
+        bufferB.current = bufferBRecording;
+        console.log('🟢 Buffer B pre-prepared and ready');
+      } catch (err) {
+        console.log('⚠️ Could not pre-prepare buffer B, will prepare on demand');
+        bufferB.current = null;
+      }
+
       setIsRecording(true);
       chunkNumber.current = 0;
-      lastChunkUploadTime.current = 0; // Reset timestamp
+      lastChunkUploadTime.current = Date.now();
+      isSwapping.current = false;
 
       // Update duration every second
       durationIntervalRef.current = setInterval(() => {
         setDuration(d => d + 1);
       }, 1000);
 
-      // Upload chunks every 5 seconds (reuse sessId declared above)
+      // Upload chunks every 5 seconds using double buffering
       chunkIntervalRef.current = setInterval(() => {
-        uploadCurrentChunk(sessId);
+        swapAndUploadChunk(sessId);
       }, 5000);
+
+      console.log('🟢 Recording started with double buffering');
 
     } catch (err: any) {
       console.error('Error starting recording:', err);
@@ -137,33 +179,67 @@ export function useRecording(): UseRecordingResult {
     }
   };
 
-  const uploadCurrentChunk = async (sessId: string): Promise<void> => {
-    if (!recordingRef.current) return;
+  // Double-buffer swap: start new recording FIRST, then stop and upload old one
+  const swapAndUploadChunk = async (sessId: string): Promise<void> => {
+    // Prevent concurrent swaps
+    if (isSwapping.current) {
+      console.log('⚠️ Swap already in progress, skipping');
+      return;
+    }
+    isSwapping.current = true;
+
+    const currentActive = getActiveRecording();
+    if (!currentActive) {
+      isSwapping.current = false;
+      return;
+    }
 
     try {
-      // Get status first to check if recording is still active
-      const status = await recordingRef.current.getStatusAsync();
+      // Check if current recording is still active
+      const status = await currentActive.getStatusAsync();
       if (!status.canRecord && !status.isRecording) {
-        console.log('⚠️  Recording already stopped, skipping chunk upload');
+        console.log('⚠️ Active recording already stopped, skipping chunk upload');
+        isSwapping.current = false;
         return;
       }
 
-      // Stop current recording
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
+      console.log(`🔄 SWAP: Currently active buffer ${activeBuffer.current}, starting swap...`);
+
+      // STEP 1: Get the inactive buffer and start it recording FIRST
+      // This ensures continuous audio capture
+      const inactiveRef = getInactiveBufferRef();
+      let newRecording = inactiveRef.current;
+      
+      if (!newRecording) {
+        // If no pre-prepared buffer, create one now
+        console.log('🔄 Creating new recording for inactive buffer...');
+        newRecording = await createRecording();
+      }
+      
+      // Start the new recording BEFORE stopping the old one
+      console.log('🔄 Starting new buffer recording...');
+      await newRecording.startAsync();
+      inactiveRef.current = newRecording;
+      
+      // Swap active buffer pointer
+      const oldBuffer = activeBuffer.current;
+      activeBuffer.current = oldBuffer === 'A' ? 'B' : 'A';
+      console.log(`🔄 Active buffer swapped: ${oldBuffer} → ${activeBuffer.current}`);
+
+      // STEP 2: Now stop and upload the old recording (no longer active)
+      console.log('🔄 Stopping old buffer and uploading...');
+      await currentActive.stopAndUnloadAsync();
+      const uri = currentActive.getURI();
 
       if (uri) {
-        // Determine file format based on platform
         const isWeb = typeof navigator !== 'undefined' && navigator.product === 'ReactNative' ? false : true;
         const fileExtension = isWeb ? 'webm' : 'wav';
         const mimeType = isWeb ? 'audio/webm' : 'audio/wav';
         
-        // Create form data with duration (5 seconds for periodic chunks)
         const formData = new FormData();
         formData.append('duration_seconds', '5');
         
         if (isWeb) {
-          // On web, fetch the blob and create a proper File object
           const response = await fetch(uri);
           const blob = await response.blob();
           const file = new File([blob], `chunk_${chunkNumber.current}.${fileExtension}`, { type: mimeType });
@@ -177,173 +253,158 @@ export function useRecording(): UseRecordingResult {
           });
         }
 
-        // Upload to backend
+        // Upload to backend (now happens while new buffer is already recording)
         await api.sessions.uploadChunk(sessId, formData);
         setChunksUploaded(prev => prev + 1);
         chunkNumber.current++;
-        lastChunkUploadTime.current = Date.now(); // Track upload time
+        lastChunkUploadTime.current = Date.now();
+        console.log(`🔄 Chunk ${chunkNumber.current - 1} uploaded successfully`);
       }
 
-      // Start new recording for next chunk
-      const newRecording = new Audio.Recording();
-      await newRecording.prepareToRecordAsync({
-        android: {
-          extension: '.wav',
-          outputFormat: Audio.AndroidOutputFormat.DEFAULT,
-          audioEncoder: Audio.AndroidAudioEncoder.DEFAULT,
-          sampleRate: 16000,
-          numberOfChannels: 1,
-          bitRate: 128000,
-        },
-        ios: {
-          extension: '.wav',
-          audioQuality: Audio.IOSAudioQuality.HIGH,
-          sampleRate: 16000,
-          numberOfChannels: 1,
-          linearPCMBitDepth: 16,
-          linearPCMIsBigEndian: false,
-          linearPCMIsFloat: false,
-        },
-        web: {
-          mimeType: 'audio/webm',
-          bitsPerSecond: 128000,
-        },
-      });
-      await newRecording.startAsync();
-      recordingRef.current = newRecording;
+      // STEP 3: Pre-prepare the old buffer for the next swap
+      // This makes the next swap faster
+      const oldBufferRef = oldBuffer === 'A' ? bufferA : bufferB;
+      try {
+        console.log(`🔄 Pre-preparing buffer ${oldBuffer} for next swap...`);
+        const preparedRecording = await createRecording();
+        oldBufferRef.current = preparedRecording;
+        console.log(`🔄 Buffer ${oldBuffer} pre-prepared and ready`);
+      } catch (err) {
+        console.log(`⚠️ Could not pre-prepare buffer ${oldBuffer}, will prepare on demand`);
+        oldBufferRef.current = null;
+      }
 
     } catch (err) {
-      console.error('Error uploading chunk:', err);
+      console.error('Error in swap and upload:', err);
       // Don't throw - continue recording even if upload fails
+    } finally {
+      isSwapping.current = false;
     }
   };
 
   const stopRecording = async (): Promise<string | null> => {
     console.log('🔴 stopRecording() called');
-    console.log('🔴 recordingRef.current:', !!recordingRef.current);
-    console.log('🔴 sessionId:', sessionId);
     
-    if (!recordingRef.current || !sessionId) {
-      console.log('🔴 EARLY RETURN: No recording or sessionId');
-      console.log('🔴 recordingRef.current:', recordingRef.current);
-      console.log('🔴 sessionId:', sessionId);
+    const currentActive = getActiveRecording();
+    if (!currentActive || !sessionId) {
+      console.log('🔴 EARLY RETURN: No active recording or sessionId');
       return null;
     }
 
+    // Capture state before clearing
+    const currentSessionId = sessionId;
+    const currentDuration = duration;
+    const currentChunkNumber = chunkNumber.current;
+
     try {
       console.log('🔴 Clearing intervals...');
-      // Clear intervals first to prevent any more chunks
       if (chunkIntervalRef.current) {
         clearInterval(chunkIntervalRef.current);
         chunkIntervalRef.current = null;
-        console.log('🔴 Chunk interval cleared');
       }
       if (durationIntervalRef.current) {
         clearInterval(durationIntervalRef.current);
         durationIntervalRef.current = null;
-        console.log('🔴 Duration interval cleared');
       }
 
-      // Wait a moment to ensure intervals are cleared and won't trigger
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Wait for any in-progress swap to complete
+      while (isSwapping.current) {
+        console.log('🔴 Waiting for swap to complete...');
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
 
-      console.log('🔴 Stopping recording...');
-      // Check if recording is still active before stopping
-      const status = await recordingRef.current.getStatusAsync();
-      console.log('🔴 Recording status:', status);
+      console.log('🔴 Stopping active recording...');
+      const status = await currentActive.getStatusAsync();
       
       let uri: string | null = null;
-      
-      // Only call stopAndUnloadAsync if actively recording
-      // isDoneRecording: true means it's already stopped/unloaded (likely by chunk upload)
       if (status.isRecording) {
-        console.log('🔴 Recording is active, stopping now...');
-        await recordingRef.current.stopAndUnloadAsync();
-        uri = recordingRef.current.getURI();
+        await currentActive.stopAndUnloadAsync();
+        uri = currentActive.getURI();
         console.log('🔴 Recording stopped, URI:', uri);
       } else {
-        console.log('🔴 Recording already stopped/done, getting URI...');
-        uri = recordingRef.current.getURI();
+        uri = currentActive.getURI();
       }
 
+      // Also clean up the inactive buffer if it exists
+      const inactiveRef = getInactiveBufferRef();
+      if (inactiveRef.current) {
+        try {
+          const inactiveStatus = await inactiveRef.current.getStatusAsync();
+          if (inactiveStatus.canRecord || inactiveStatus.isRecording) {
+            await inactiveRef.current.stopAndUnloadAsync();
+          }
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+        inactiveRef.current = null;
+      }
+
+      // *** IMMEDIATELY update UI state after recording stops ***
+      bufferA.current = null;
+      bufferB.current = null;
+      setIsRecording(false);
+      setDuration(0);
+      chunkNumber.current = 0;
+      setChunksUploaded(0);
+      console.log('🔴 Recording state cleared immediately after stop');
+
+      // Now perform network operations in the background
       if (uri) {
         console.log('🔴 Uploading final chunk...');
         try {
-          // Determine file format based on platform
           const isWeb = typeof navigator !== 'undefined' && navigator.product === 'ReactNative' ? false : true;
           const fileExtension = isWeb ? 'webm' : 'wav';
           const mimeType = isWeb ? 'audio/webm' : 'audio/wav';
           
           // Calculate actual duration of final chunk
           let finalChunkDuration: number;
-          if (chunkNumber.current === 0) {
-            // No chunks uploaded yet - use total duration
-            finalChunkDuration = duration;
+          if (currentChunkNumber === 0) {
+            finalChunkDuration = currentDuration;
           } else if (lastChunkUploadTime.current > 0) {
-            // Calculate time since last chunk upload (in seconds)
             const timeSinceLastUpload = (Date.now() - lastChunkUploadTime.current) / 1000;
             finalChunkDuration = Math.round(timeSinceLastUpload);
           } else {
-            // Fallback to modulo calculation
-            finalChunkDuration = (duration % 5) || 5;
+            finalChunkDuration = (currentDuration % 5) || 5;
           }
           
-          // Ensure duration is at least 1 second and reasonable (5 seconds max for 5s chunks)
           finalChunkDuration = Math.max(1, Math.min(finalChunkDuration, 5));
+          console.log('🔴 Final chunk duration:', finalChunkDuration, 'seconds');
           
-          console.log('🔴 Platform:', isWeb ? 'web' : 'mobile', '| Format:', mimeType, '| Duration:', finalChunkDuration, 'seconds');
-          
-          // Create form data for final chunk
           const formData = new FormData();
           formData.append('duration_seconds', finalChunkDuration.toString());
           
           if (isWeb) {
-            // On web, fetch the blob and create a proper File object
-            console.log('🔴 Fetching blob for web upload...');
             const response = await fetch(uri);
             const blob = await response.blob();
-            const file = new File([blob], `chunk_${chunkNumber.current}.${fileExtension}`, { type: mimeType });
+            const file = new File([blob], `chunk_${currentChunkNumber}.${fileExtension}`, { type: mimeType });
             formData.append('file', file);
           } else {
             // @ts-ignore - FormData file handling in React Native
             formData.append('file', {
               uri,
-              name: `chunk_${chunkNumber.current}.${fileExtension}`,
+              name: `chunk_${currentChunkNumber}.${fileExtension}`,
               type: mimeType,
             });
           }
 
-          // Upload final chunk to backend
-          await api.sessions.uploadChunk(sessionId, formData);
+          await api.sessions.uploadChunk(currentSessionId, formData);
           console.log('🔴 Final chunk uploaded successfully');
-          setChunksUploaded(prev => prev + 1);
         } catch (uploadErr: any) {
           console.error('🔴 Final chunk upload failed:', uploadErr.message);
-          throw uploadErr; // Re-throw to handle properly
+          throw uploadErr;
         }
       }
 
       console.log('🔴 Ending session...');
-      // End session
-      await api.sessions.end(sessionId, duration);
+      await api.sessions.end(currentSessionId, currentDuration);
       console.log('🔴 Session ended successfully');
 
-      // Clear recording reference
-      recordingRef.current = null;
-      setIsRecording(false);
-      console.log('🔴 Recording state cleared, returning sessionId:', sessionId);
-      return sessionId;
+      return currentSessionId;
 
     } catch (err: any) {
       console.error('🔴 Error stopping recording:', err);
       setError(err.message || 'Failed to stop recording');
       throw err;
-    } finally {
-      console.log('🔴 Resetting state in finally block');
-      // Reset state
-      setDuration(0);
-      chunkNumber.current = 0;
-      setChunksUploaded(0);
     }
   };
 
