@@ -1,0 +1,146 @@
+# Sentence Templates for Singlish Fine-tuning
+# =============================================
+#
+# INSTRUCTIONS:
+# 1. Each team member reads ALL sentences aloud
+# 2. Record in a quiet environment
+# 3. Speak naturally - don't over-enunciate
+# 4. Save as: speakername_template_001.wav, speakername_template_002.wav, etc.
+# 5. One sentence per recording (3-10 seconds each)
+#
+# TARGET WORDS (27 total):
+# Particles: lah, lor, leh, meh, sia, hor, ah, one, mah
+# Exclamations: walao, wah, aiyo, alamak
+# Common: can, cannot, paiseh, shiok, sian, jialat, chope, kiasu, kiasi, blur, atas, cheem, kaypoh, steady
+#
+# Each sentence is numbered. ~50 sentences covering all words multiple times.
+# =============================================
+
+# --- PARTICLES: lah, lor, leh, meh, sia ---
+
+01. Come on lah, we going to be late already.
+02. This one not bad lah, quite nice actually.
+03. Don't worry lah, everything will be fine.
+04. Okay lah, I go first then you follow.
+05. Just do it lor, no point thinking so much.
+06. Like that lor, what else can we do.
+07. Cannot help one lor, already tried many times.
+08. He always like that lor, you know him.
+09. You want to come or not leh?
+10. This one nice leh, you should try it.
+11. A bit weird leh, something doesn't feel right.
+12. Actually not bad leh, better than I expected.
+13. Really meh? I don't think so.
+14. Got such thing meh? Never heard before.
+15. Can finish by today meh? Seems very tight.
+16. Wah this one damn good sia!
+17. The queue damn long sia, wait very long.
+18. He very fast sia, finished everything already.
+
+# --- PARTICLES: hor, ah, one, mah ---
+
+19. This one very expensive hor, you sure you want?
+20. Later we go eat hor, don't forget.
+21. The weather today very hot ah.
+22. You coming later ah? Let me know.
+23. So fast ah, I just started only.
+24. She always like that one, very hardworking.
+25. Boys like that one lah, don't worry.
+26. This place always crowded one, every weekend same.
+27. No choice mah, have to do what boss says.
+28. Like that mah, nothing we can do about it.
+
+# --- EXCLAMATIONS: walao, wah, aiyo, alamak ---
+
+29. Walao, why so expensive this one!
+30. Walao eh, the traffic today really jialat.
+31. Walao, you see what happened or not?
+32. Wah, this food damn shiok!
+33. Wah, you damn steady lah!
+34. Wah, so many people today.
+35. Aiyo, I forgot to bring my wallet!
+36. Aiyo, why you never tell me earlier?
+37. Aiyo, so paiseh, I made a mistake.
+38. Alamak, we missed the bus already!
+39. Alamak, the meeting is in five minutes!
+
+# --- COMMON WORDS: can, cannot, paiseh ---
+
+40. Can lah, no problem for me.
+41. Can can can, I help you do.
+42. Sure can one, don't worry.
+43. Cannot lah, I got other things to do.
+44. Like that cannot leh, must follow the rules.
+45. Sorry ah, really cannot make it today.
+46. So paiseh, I come late again.
+47. Paiseh paiseh, I forgot your name.
+48. Very paiseh to ask, but can you help me?
+
+# --- COMMON WORDS: shiok, sian, jialat ---
+
+49. Wah this mala damn shiok sia!
+50. After gym go eat, confirm shiok one.
+51. The aircon here very shiok lah.
+52. So sian today, nothing to do.
+53. Work until very sian already.
+54. Sian ah, queue so long again.
+55. Wah jialat, I think I lost my phone.
+56. The situation quite jialat lah, not easy to fix.
+57. Jialat lah, forgot to save the document.
+
+# --- COMMON WORDS: chope, kiasu, kiasi ---
+
+58. Quick go chope the seats first!
+59. I chope this one already ah, don't take.
+60. You go chope table, I go order food.
+61. Singaporeans damn kiasu one lah.
+62. Don't be so kiasu lah, relax a bit.
+63. The parents all very kiasu, sign up for everything.
+64. He very kiasi one, scared of everything.
+65. Don't be kiasi lah, just try first.
+
+# --- COMMON WORDS: blur, atas, cheem ---
+
+66. Sorry ah, I damn blur today.
+67. He always blur blur one, never know what's happening.
+68. Blur like sotong, ask him also no use.
+69. That restaurant very atas one, quite expensive.
+70. Wah your new office damn atas sia!
+71. She always go those atas places one.
+72. This topic very cheem leh, I don't understand.
+73. Don't talk so cheem lah, explain simply can?
+74. The lecture damn cheem sia, I lost halfway through.
+
+# --- COMMON WORDS: kaypoh, steady ---
+
+75. Don't be so kaypoh lah, mind your own business.
+76. The aunties here very kaypoh one.
+77. Why you so kaypoh, want to know everything?
+78. Wah you damn steady lah bro!
+79. He very steady one, can rely on him.
+80. Steady lah, let's do this together.
+
+# --- MIXED SENTENCES (multiple target words) ---
+
+81. Walao, so sian today, nothing to do lah.
+82. Wah this one shiok sia, must try lah!
+83. Aiyo so paiseh, I blur blur forget already.
+84. Cannot lah, the queue jialat one, wait very long.
+85. Alamak, I kiasi never chope seats first!
+86. That place very atas one lor, expensive sia.
+87. She damn kaypoh mah, always want to know everything.
+88. Can lah can lah, steady one this guy.
+89. Walao the topic so cheem, I blur already lah.
+90. Wah you kiasu sia, chope everything first!
+
+# =============================================
+# RECORDING TIPS:
+# - Each sentence = one audio file
+# - Speak at natural pace
+# - Include natural pauses and emphasis
+# - It's okay to have background silence at start/end
+# - If you mess up, just re-record that sentence
+#
+# TOTAL: 90 sentences
+# Estimated recording time per person: 15-20 minutes
+# =============================================

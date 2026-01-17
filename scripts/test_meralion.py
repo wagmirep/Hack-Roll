@@ -63,12 +63,13 @@ def test_model_loading():
         print("Loading MERaLiON-2-10B-ASR...")
         start = time.time()
 
-        transcriber = get_transcriber()
+        model, processor = get_transcriber()
 
         elapsed = time.time() - start
         print(f"Model loaded successfully in {elapsed:.1f}s")
 
-        assert transcriber is not None, "Transcriber is None"
+        assert model is not None, "Model is None"
+        assert processor is not None, "Processor is None"
         assert is_model_loaded(), "Model not marked as loaded"
 
         print("PASSED: Model loading")
@@ -76,6 +77,8 @@ def test_model_loading():
 
     except Exception as e:
         print(f"FAILED: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -166,18 +169,19 @@ def test_singleton_caching():
 
         # First call (should use cached instance)
         start1 = time.time()
-        t1 = get_transcriber()
+        model1, proc1 = get_transcriber()
         elapsed1 = time.time() - start1
 
         # Second call (should be instant from cache)
         start2 = time.time()
-        t2 = get_transcriber()
+        model2, proc2 = get_transcriber()
         elapsed2 = time.time() - start2
 
         print(f"First get_transcriber(): {elapsed1:.3f}s")
         print(f"Second get_transcriber(): {elapsed2:.3f}s")
 
-        assert t1 is t2, "Transcriber instances are different!"
+        assert model1 is model2, "Model instances are different!"
+        assert proc1 is proc2, "Processor instances are different!"
         assert elapsed2 < 0.1, f"Second call too slow ({elapsed2:.3f}s), caching may not work"
 
         print("PASSED: Model is cached correctly")

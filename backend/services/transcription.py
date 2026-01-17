@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 # MODEL SINGLETON (Agent 2)
 # =============================================================================
 
-_transcriber = None
-_transcriber_lock = Lock()
+_model = None
+_processor = None
+_model_lock = Lock()
 
 # Model configuration
 MODEL_NAME = "MERaLiON/MERaLiON-2-10B-ASR"
@@ -30,31 +31,31 @@ SAMPLE_RATE = 16000  # Expected input sample rate
 
 def get_transcriber():
     """
-    Get or create the MERaLiON transcriber pipeline instance.
+    Get or create the MERaLiON model and processor instances.
 
     Uses singleton pattern to avoid reloading the 10B parameter model.
     Thread-safe initialization.
 
     Returns:
-        transformers.Pipeline: The ASR pipeline instance
+        tuple: (model, processor) instances
 
     Raises:
         RuntimeError: If model fails to load
     """
-    global _transcriber
+    global _model, _processor
 
-    if _transcriber is not None:
-        return _transcriber
+    if _model is not None and _processor is not None:
+        return _model, _processor
 
-    with _transcriber_lock:
+    with _model_lock:
         # Double-check after acquiring lock
-        if _transcriber is not None:
-            return _transcriber
+        if _model is not None and _processor is not None:
+            return _model, _processor
 
         logger.info(f"Loading MERaLiON ASR model: {MODEL_NAME}")
 
         try:
-            from transformers import pipeline
+            from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
             import torch
 
             # Check GPU memory to decide loading strategy
@@ -71,34 +72,79 @@ def get_transcriber():
             else:
                 logger.warning("CUDA not available, using CPU (will be slow)")
 
+            # Load processor
+            _processor = AutoProcessor.from_pretrained(
+                MODEL_NAME,
+                trust_remote_code=True
+            )
+
+            # Load model with appropriate device strategy
             if use_device_map:
-                # Use device_map for automatic CPU/GPU split
-                _transcriber = pipeline(
-                    "automatic-speech-recognition",
-                    model=MODEL_NAME,
-                    device_map="auto",
+                _model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                    MODEL_NAME,
                     torch_dtype=torch.float16,
+                    device_map="auto",
                     trust_remote_code=True,
-                    model_kwargs={"attn_implementation": "eager"},
+                    attn_implementation="eager",
                 )
             else:
-                # Standard loading (full GPU or CPU)
-                device = 0 if torch.cuda.is_available() else -1
-                _transcriber = pipeline(
-                    "automatic-speech-recognition",
-                    model=MODEL_NAME,
-                    device=device,
+                _model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                    MODEL_NAME,
                     torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
                     trust_remote_code=True,
-                    model_kwargs={"attn_implementation": "eager"},
+                    attn_implementation="eager",
                 )
+                if torch.cuda.is_available():
+                    _model = _model.to("cuda")
 
             logger.info("MERaLiON model loaded successfully")
-            return _transcriber
+            return _model, _processor
 
         except Exception as e:
             logger.error(f"Failed to load MERaLiON model: {e}")
             raise RuntimeError(f"Failed to load transcription model: {e}") from e
+
+
+def _transcribe_audio_array(audio_data, sample_rate: int = SAMPLE_RATE) -> str:
+    """
+    Internal function to transcribe audio array using model directly.
+
+    Args:
+        audio_data: numpy array of audio samples
+        sample_rate: Sample rate of the audio
+
+    Returns:
+        Transcription text
+    """
+    import torch
+    import numpy as np
+
+    model, processor = get_transcriber()
+
+    # Ensure float32 numpy array
+    if not isinstance(audio_data, np.ndarray):
+        audio_data = np.array(audio_data)
+    audio_data = audio_data.astype(np.float32)
+
+    # Process audio through processor
+    inputs = processor(
+        audio_data,
+        sampling_rate=sample_rate,
+        return_tensors="pt"
+    )
+
+    # Move inputs to model device
+    device = next(model.parameters()).device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    # Generate transcription
+    with torch.no_grad():
+        generated_ids = model.generate(**inputs, max_new_tokens=256)
+
+    # Decode
+    transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+
+    return transcription.strip()
 
 
 def transcribe_audio(audio_path: str) -> str:
@@ -121,15 +167,15 @@ def transcribe_audio(audio_path: str) -> str:
     logger.info(f"Transcribing audio: {audio_path}")
 
     try:
-        transcriber = get_transcriber()
+        import librosa
 
-        # Run transcription
-        result = transcriber(audio_path)
+        # Load audio file
+        audio_data, sr = librosa.load(audio_path, sr=SAMPLE_RATE)
 
-        text = result.get("text", "")
+        text = _transcribe_audio_array(audio_data, SAMPLE_RATE)
         logger.info(f"Transcription complete: {len(text)} characters")
 
-        return text.strip()
+        return text
 
     except Exception as e:
         logger.error(f"Transcription failed for {audio_path}: {e}")
@@ -168,16 +214,7 @@ def transcribe_segment(audio_bytes: bytes, sample_rate: int = SAMPLE_RATE) -> st
             import librosa
             audio_data = librosa.resample(audio_data, orig_sr=sr, target_sr=sample_rate)
 
-        transcriber = get_transcriber()
-
-        # Create input dict for pipeline
-        inputs = {
-            "raw": audio_data.astype(np.float32),
-            "sampling_rate": sample_rate
-        }
-
-        result = transcriber(inputs)
-        text = result.get("text", "")
+        text = _transcribe_audio_array(audio_data, sample_rate)
 
         return text.strip()
 
@@ -188,7 +225,7 @@ def transcribe_segment(audio_bytes: bytes, sample_rate: int = SAMPLE_RATE) -> st
 
 def is_model_loaded() -> bool:
     """Check if the transcription model is currently loaded."""
-    return _transcriber is not None
+    return _model is not None and _processor is not None
 
 
 def unload_model() -> None:
@@ -197,13 +234,15 @@ def unload_model() -> None:
 
     Useful for testing or when switching between models.
     """
-    global _transcriber
+    global _model, _processor
 
-    with _transcriber_lock:
-        if _transcriber is not None:
+    with _model_lock:
+        if _model is not None:
             logger.info("Unloading MERaLiON model")
-            del _transcriber
-            _transcriber = None
+            del _model
+            del _processor
+            _model = None
+            _processor = None
 
             # Force garbage collection
             import gc
