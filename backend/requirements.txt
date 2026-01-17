@@ -1,0 +1,63 @@
+# requirements.txt - Python Dependencies
+#
+# PURPOSE:
+#     Define all Python package dependencies for the backend.
+#     Install with: pip install -r requirements.txt
+#
+# REFERENCED BY:
+#     - Dockerfile
+#     - Development setup instructions
+#     - CI/CD pipeline
+#
+# CATEGORIES:
+#     - Web Framework: FastAPI, uvicorn
+#     - Database: SQLAlchemy, psycopg2, alembic
+#     - ML/ASR: transformers, torch, pyannote.audio
+#     - Audio: librosa, soundfile
+#     - Queue: redis
+#     - Storage: boto3
+#     - Firebase: firebase-admin
+#     - Testing: pytest, httpx
+
+# Web Framework
+# fastapi
+# uvicorn[standard]
+# python-multipart
+
+# Database
+# sqlalchemy
+# psycopg2-binary
+# alembic
+
+# ML / ASR
+# transformers
+# torch
+# pyannote.audio
+# accelerate
+
+# Audio Processing
+# librosa
+# soundfile
+# pydub
+
+# Queue
+# redis
+
+# Storage
+# boto3
+
+# Firebase
+# firebase-admin
+
+# Configuration
+# python-dotenv
+# pydantic-settings
+
+# Testing
+# pytest
+# pytest-asyncio
+# httpx
+
+# Utilities
+# python-jose[cryptography]
+# passlib[bcrypt]

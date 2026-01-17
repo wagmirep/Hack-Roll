@@ -1,0 +1,55 @@
+# ml/requirements.txt - ML Training Dependencies
+#
+# PURPOSE:
+#     Define Python dependencies for ML training pipeline.
+#     Separate from backend to allow independent environment.
+#
+# REFERENCED BY:
+#     - Training scripts
+#     - CI/CD training pipeline
+#
+# INSTALL:
+#     pip install -r requirements.txt
+
+# =============================================================================
+# CORE ML
+# =============================================================================
+# torch
+# transformers
+# accelerate
+# peft                    # For LoRA adapters
+# datasets                # HuggingFace datasets
+# evaluate                # Metrics
+
+# =============================================================================
+# AUDIO
+# =============================================================================
+# librosa
+# soundfile
+# torchaudio
+
+# =============================================================================
+# TRAINING
+# =============================================================================
+# tensorboard             # Logging
+# wandb                   # Alternative logging (optional)
+# tqdm                    # Progress bars
+
+# =============================================================================
+# DATA
+# =============================================================================
+# pandas
+# numpy
+# pyyaml                  # Config loading
+
+# =============================================================================
+# TESTING
+# =============================================================================
+# pytest
+# jiwer                   # WER calculation
+
+# =============================================================================
+# UTILITIES
+# =============================================================================
+# python-dotenv
+# huggingface-hub

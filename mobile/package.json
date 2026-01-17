@@ -1,0 +1,32 @@
+{
+  "_comment": "package.json - Mobile App Dependencies",
+  "_purpose": "Define Node.js dependencies and scripts for React Native + Expo app",
+  "_referenced_by": [
+    "bun install / npm install",
+    "CI/CD pipeline",
+    "Expo build system"
+  ],
+  "_scripts": {
+    "start": "Start Expo development server",
+    "android": "Run on Android emulator/device",
+    "ios": "Run on iOS simulator/device",
+    "test": "Run Jest tests",
+    "lint": "Run ESLint"
+  },
+  "_dependencies": {
+    "expo": "Expo SDK",
+    "expo-av": "Audio recording and playback",
+    "expo-file-system": "File system access",
+    "react": "React library",
+    "react-native": "React Native framework",
+    "@react-navigation/native": "Navigation",
+    "firebase": "Firebase client SDK"
+  },
+  "_devDependencies": {
+    "typescript": "TypeScript compiler",
+    "@types/react": "React type definitions",
+    "jest": "Test runner",
+    "@testing-library/react-native": "Testing utilities",
+    "eslint": "Linter"
+  }
+}

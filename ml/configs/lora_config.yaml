@@ -1,0 +1,35 @@
+# lora_config.yaml - LoRA Adapter Configuration
+#
+# PURPOSE:
+#     Define LoRA (Low-Rank Adaptation) hyperparameters for fine-tuning.
+#     Controls adapter architecture and training behavior.
+#
+# REFERENCED BY:
+#     - scripts/train_lora.py - Loads this config
+#
+# REFERENCES:
+#     - PEFT library documentation
+#     - MERaLiON model architecture
+
+# =============================================================================
+# LORA ARCHITECTURE
+# =============================================================================
+# lora:
+#   r: 16                      # Rank - lower = smaller adapter, higher = more capacity
+#   lora_alpha: 32             # Scaling factor (usually 2x rank)
+#   target_modules:            # Which layers to adapt
+#     - q_proj                 # Query projection
+#     - v_proj                 # Value projection
+#     # - k_proj               # Key projection (optional, increases size)
+#     # - o_proj               # Output projection (optional)
+#   lora_dropout: 0.1          # Dropout for regularization
+#   bias: none                 # Bias training: none, all, or lora_only
+#   task_type: CAUSAL_LM       # Task type for PEFT
+
+# =============================================================================
+# NOTES
+# =============================================================================
+# - Rank 16 is a good balance for hackathon (not too large, decent capacity)
+# - Target q_proj and v_proj is standard for transformer fine-tuning
+# - Increasing rank beyond 32 has diminishing returns
+# - lora_alpha / r ratio affects learning dynamics (2x is standard)
