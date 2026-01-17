@@ -26,10 +26,12 @@ from storage import storage
 import uuid
 import json
 import logging
+import asyncio
 from typing import List, Optional
 from datetime import datetime
 
 from redis_client import get_redis_client, PROCESSING_QUEUE
+from services.transcription_cache import transcribe_chunk_background
 
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
 logger = logging.getLogger(__name__)
@@ -161,58 +163,81 @@ async def create_session(
 async def upload_chunk(
     session_id: uuid.UUID,
     file: UploadFile = File(...),
+    duration: Optional[float] = Query(None, description="Chunk duration in seconds"),
     current_user: Profile = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Upload an audio chunk for a session.
-    
+
+    Triggers background transcription after successful upload to cache
+    transcription results for faster post-recording processing.
+
     Args:
         session_id: Session ID
         file: Audio file chunk
-        
+        duration: Optional chunk duration in seconds (default 30.0)
+
     Returns:
         Upload confirmation
     """
     # Get session
     session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
-    
+
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Session not found"
         )
-    
+
     # Verify user is in the group
     member = db.query(GroupMember).filter(
         GroupMember.group_id == session.group_id,
         GroupMember.user_id == current_user.id
     ).first()
-    
+
     if not member:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to upload to this session"
         )
-    
+
     # Get next chunk number
     chunk_count = db.query(AudioChunk).filter(
         AudioChunk.session_id == session_id
     ).count()
     chunk_number = chunk_count + 1
-    
+
+    # Read file content (needed for both storage upload and background transcription)
+    file_content = await file.read()
+    await file.seek(0)  # Reset for storage upload
+
     # Upload to storage
     storage_path = await storage.upload_chunk(session_id, chunk_number, file)
-    
+
     # Save chunk record
+    chunk_duration = duration if duration else 30.0
     chunk = AudioChunk(
         session_id=session_id,
         chunk_number=chunk_number,
-        storage_path=storage_path
+        storage_path=storage_path,
+        duration_seconds=chunk_duration
     )
     db.add(chunk)
     db.commit()
-    
+
+    # Trigger background transcription (fire-and-forget)
+    # Don't await - let it run in background while we return response
+    asyncio.create_task(
+        transcribe_chunk_background(
+            session_id=session_id,
+            chunk_number=chunk_number,
+            audio_bytes=file_content,
+            duration_seconds=chunk_duration
+        )
+    )
+    logger.debug(f"Triggered background transcription for chunk {chunk_number}")
+
     return ChunkUploadResponse(
         chunk_number=chunk_number,
         uploaded=True,
