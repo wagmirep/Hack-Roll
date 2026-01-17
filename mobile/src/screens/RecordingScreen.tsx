@@ -31,6 +31,10 @@ export default function RecordingScreen({ navigation, route }: Props) {
     route.params?.groupId || groups[0]?.id || null
   );
   const [isPaused, setIsPaused] = useState(false);
+  const [pausedDuration, setPausedDuration] = useState(0);
+  const pausedRotationValue = useRef<number>(0);
+  const pauseStartTime = useRef<number>(0);
+  const totalPausedTime = useRef<number>(0);
 
   const {
     isRecording,
@@ -46,6 +50,9 @@ export default function RecordingScreen({ navigation, route }: Props) {
   const pulseAnim1 = useRef(new Animated.Value(1)).current;
   const pulseAnim2 = useRef(new Animated.Value(1)).current;
   const pulseAnim3 = useRef(new Animated.Value(1)).current;
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+  const indicatorPulse = useRef(new Animated.Value(1)).current;
+  const buttonScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     requestPermission();
@@ -65,9 +72,9 @@ export default function RecordingScreen({ navigation, route }: Props) {
           Animated.sequence([
             Animated.delay(delay),
             Animated.timing(animValue, {
-              toValue: 1.5,
-              duration: 2000,
-              easing: Easing.inOut(Easing.ease),
+              toValue: 1.6,
+              duration: 1500,
+              easing: Easing.out(Easing.ease),
               useNativeDriver: true,
             }),
             Animated.timing(animValue, {
@@ -80,50 +87,136 @@ export default function RecordingScreen({ navigation, route }: Props) {
       };
 
       const pulse1 = createPulse(pulseAnim1, 0);
-      const pulse2 = createPulse(pulseAnim2, 400);
-      const pulse3 = createPulse(pulseAnim3, 800);
+      const pulse2 = createPulse(pulseAnim2, 500);
+      const pulse3 = createPulse(pulseAnim3, 1000);
+
+      // Rotation animation - reset to 0 before each loop
+      const rotate = Animated.loop(
+        Animated.sequence([
+          Animated.timing(rotateAnim, {
+            toValue: 1,
+            duration: 3000,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          }),
+          Animated.timing(rotateAnim, {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+
+      // Recording indicator pulse
+      const indicatorAnimation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(indicatorPulse, {
+            toValue: 1.3,
+            duration: 800,
+            easing: Easing.ease,
+            useNativeDriver: true,
+          }),
+          Animated.timing(indicatorPulse, {
+            toValue: 1,
+            duration: 800,
+            easing: Easing.ease,
+            useNativeDriver: true,
+          }),
+        ])
+      );
 
       pulse1.start();
       pulse2.start();
       pulse3.start();
+      rotate.start();
+      indicatorAnimation.start();
 
       return () => {
         pulse1.stop();
         pulse2.stop();
         pulse3.stop();
+        rotate.stop();
+        indicatorAnimation.stop();
+        indicatorPulse.setValue(1);
       };
     }
   }, [isRecording, isPaused]);
 
+  const animateButtonPress = () => {
+    Animated.sequence([
+      Animated.timing(buttonScale, {
+        toValue: 0.95,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(buttonScale, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
   const handleStartRecording = async () => {
-    if (!selectedGroupId) {
-      Alert.alert('No Group', 'Please create or join a group first');
-      return;
-    }
+    animateButtonPress();
+    
+    // Reset pause tracking
+    totalPausedTime.current = 0;
+    pauseStartTime.current = 0;
+    pausedRotationValue.current = 0;
+    rotateAnim.setValue(0);
+      
+    // Use selected group ID or null for personal sessions
+    const groupId = selectedGroupId || groups[0]?.id || null;
 
     try {
-      await startRecording(selectedGroupId);
+      console.log('Starting recording with groupId:', groupId);
+      await startRecording(groupId);
       setIsPaused(false);
-    } catch (err) {
-      // Error already handled by hook
+      console.log('Recording started successfully');
+    } catch (err: any) {
+      console.error('Failed to start recording:', err);
+      Alert.alert('Recording Error', err?.message || 'Failed to start recording');
     }
   };
 
   const handleStopRecording = async () => {
+    console.log('🛑 STOP BUTTON PRESSED - handleStopRecording called');
     try {
+      console.log('🛑 Calling stopRecording...');
       const sessionId = await stopRecording();
+      console.log('🛑 stopRecording returned sessionId:', sessionId);
       if (sessionId) {
+        console.log('🛑 Navigating to Processing screen with sessionId:', sessionId);
         navigation.navigate('Processing', { sessionId });
+      } else {
+        console.log('🛑 No sessionId returned, not navigating');
       }
     } catch (err) {
+      console.error('🛑 Error in handleStopRecording:', err);
       Alert.alert('Error', 'Failed to stop recording');
     }
   };
 
   const handlePauseResume = () => {
+    if (!isPaused) {
+      // Pausing - record when we paused and save the current display time
+      pauseStartTime.current = duration;
+      setPausedDuration(duration - totalPausedTime.current);
+      pausedRotationValue.current = rotateAnim.__getValue();
+    } else {
+      // Resuming - add the paused duration to total and restore rotation
+      const pauseDuration = duration - pauseStartTime.current;
+      totalPausedTime.current += pauseDuration;
+      
+      // Set rotation to where we paused before starting animation again
+      rotateAnim.setValue(pausedRotationValue.current);
+    }
     setIsPaused(!isPaused);
-    // TODO: Implement actual pause/resume logic in useRecording hook
   };
+
+  // When paused, show frozen time. When active, subtract paused time from duration
+  const displayDuration = isPaused ? pausedDuration : (duration - totalPausedTime.current);
 
   const formatDuration = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -134,152 +227,222 @@ export default function RecordingScreen({ navigation, route }: Props) {
   const renderIdleState = () => (
     <>
       <Text style={styles.titleText}>Start your yap session</Text>
-      <TouchableOpacity
-        style={styles.logoButton}
-        onPress={handleStartRecording}
-        activeOpacity={0.8}
-      >
-        <View style={styles.logoCircle}>
-          <Image
-            source={require('../../assets/images/rabak-logo.jpg')}
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
-        </View>
-      </TouchableOpacity>
+      <View style={styles.mainButtonContainer}>
+        <TouchableOpacity
+          onPress={handleStartRecording}
+          activeOpacity={1}
+        >
+          <Animated.View 
+            style={[
+              styles.logoButton,
+              {
+                transform: [{ scale: buttonScale }],
+              },
+            ]}
+          >
+            <View style={styles.logoCircle}>
+              <Image
+                source={require('../../assets/images/rabak-logo.jpg')}
+                style={styles.logoImage}
+                resizeMode="cover"
+              />
+            </View>
+          </Animated.View>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.controlsPlaceholder} />
+      <Text style={styles.subtitleText}>Tap to begin recording</Text>
     </>
   );
 
-  const renderRecordingState = () => (
-    <>
-      <Text style={styles.titleText}>Recording...</Text>
-      <View style={styles.recordingContainer}>
-        {/* Pulsing circles */}
-        <Animated.View
-          style={[
-            styles.pulseCircle,
-            styles.pulseCircle3,
-            {
-              transform: [{ scale: pulseAnim3 }],
-              opacity: pulseAnim3.interpolate({
-                inputRange: [1, 1.5],
-                outputRange: [0.3, 0],
-              }),
-            },
-          ]}
-        />
-        <Animated.View
-          style={[
-            styles.pulseCircle,
-            styles.pulseCircle2,
-            {
-              transform: [{ scale: pulseAnim2 }],
-              opacity: pulseAnim2.interpolate({
-                inputRange: [1, 1.5],
-                outputRange: [0.4, 0],
-              }),
-            },
-          ]}
-        />
-        <Animated.View
-          style={[
-            styles.pulseCircle,
-            styles.pulseCircle1,
-            {
-              transform: [{ scale: pulseAnim1 }],
-              opacity: pulseAnim1.interpolate({
-                inputRange: [1, 1.5],
-                outputRange: [0.5, 0],
-              }),
-            },
-          ]}
-        />
+  const renderRecordingState = () => {
+    const spin = rotateAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: ['0deg', '360deg'],
+    });
 
-        <TouchableOpacity
-          style={styles.logoButton}
-          onPress={handlePauseResume}
-          activeOpacity={0.8}
-        >
-          <View style={styles.logoCircle}>
-            <Image
-              source={require('../../assets/images/rabak-logo.jpg')}
-              style={styles.logoImage}
-              resizeMode="contain"
+    return (
+      <>
+        <Text style={styles.titleText}>Recording...</Text>
+        <View style={styles.mainButtonContainer}>
+          <View style={styles.recordingContainer}>
+            {/* Pulsing circles */}
+            <Animated.View
+              style={[
+                styles.pulseCircle,
+                styles.pulseCircle3,
+                {
+                  transform: [{ scale: pulseAnim3 }],
+                  opacity: pulseAnim3.interpolate({
+                    inputRange: [1, 1.6],
+                    outputRange: [0.4, 0],
+                  }),
+                },
+              ]}
             />
+            <Animated.View
+              style={[
+                styles.pulseCircle,
+                styles.pulseCircle2,
+                {
+                  transform: [{ scale: pulseAnim2 }],
+                  opacity: pulseAnim2.interpolate({
+                    inputRange: [1, 1.6],
+                    outputRange: [0.5, 0],
+                  }),
+                },
+              ]}
+            />
+            <Animated.View
+              style={[
+                styles.pulseCircle,
+                styles.pulseCircle1,
+                {
+                  transform: [{ scale: pulseAnim1 }],
+                  opacity: pulseAnim1.interpolate({
+                    inputRange: [1, 1.6],
+                    outputRange: [0.6, 0],
+                  }),
+                },
+              ]}
+            />
+
+            <View style={styles.logoButton}>
+              <View style={styles.logoCircle}>
+                <Animated.Image
+                  source={require('../../assets/images/rabak-logo.jpg')}
+                  style={[
+                    styles.logoImage,
+                    {
+                      transform: [{ rotate: spin }],
+                    },
+                  ]}
+                  resizeMode="cover"
+                />
+              </View>
+            </View>
           </View>
-        </TouchableOpacity>
-      </View>
-    </>
-  );
-
-  const renderPausedState = () => (
-    <>
-      <Text style={styles.titleText}>Paused</Text>
-      <TouchableOpacity
-        style={styles.logoButton}
-        onPress={handlePauseResume}
-        activeOpacity={0.8}
-      >
-        <View style={styles.logoCircle}>
-          <Image
-            source={require('../../assets/images/rabak-logo.jpg')}
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
         </View>
-      </TouchableOpacity>
 
-      <View style={styles.controlButtons}>
-        <TouchableOpacity
-          style={styles.controlButton}
-          onPress={handlePauseResume}
-        >
-          <View style={styles.playIcon} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.controlButton}
-          onPress={handleStopRecording}
-        >
-          <View style={styles.stopIcon} />
-        </TouchableOpacity>
-      </View>
-    </>
-  );
+        {/* Control buttons */}
+        <View style={styles.recordingControls}>
+          <TouchableOpacity
+            style={styles.controlNavButton}
+            onPress={handlePauseResume}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.controlIcon}>❚❚</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.controlNavButton}
+            onPress={handleStopRecording}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.controlIcon}>■</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.subtitleText}>Recording in progress...</Text>
+      </>
+    );
+  };
+
+  const renderPausedState = () => {
+    const pausedSpin = rotateAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: ['0deg', '360deg'],
+    });
+
+    return (
+      <>
+        <Text style={styles.titleText}>Paused</Text>
+        <View style={styles.mainButtonContainer}>
+          <View style={styles.logoButton}>
+            <View style={styles.logoCircle}>
+              <Animated.Image
+                source={require('../../assets/images/rabak-logo.jpg')}
+                style={[
+                  styles.logoImage,
+                  {
+                    transform: [{ rotate: pausedSpin }],
+                  },
+                ]}
+                resizeMode="cover"
+              />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.recordingControls}>
+          <TouchableOpacity
+            style={styles.controlNavButton}
+            onPress={handlePauseResume}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.controlIcon}>▶</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.controlNavButton}
+            onPress={handleStopRecording}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.controlIcon}>■</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.subtitleText}>Resume or stop recording</Text>
+      </>
+    );
+  };
 
   return (
     <LinearGradient
-      colors={['#E88080', '#ED6B6B']}
+      colors={['#8B1A1A', '#6B1515', '#A64545']}
+      locations={[0, 0.5, 1]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
       style={styles.container}
     >
       <SafeAreaView style={styles.safeArea}>
         {/* Top Navigation */}
         <View style={styles.topNav}>
-          <TouchableOpacity style={styles.navButton}>
-            <Text style={styles.navIcon}>🕐</Text>
+          <TouchableOpacity style={styles.navButton} activeOpacity={0.7}>
+            <Text style={styles.navIconText}>⏱</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.navButton}>
-            <Text style={styles.navIcon}>⚙️</Text>
+          <TouchableOpacity style={styles.navButton} activeOpacity={0.7}>
+            <Text style={styles.navIconText}>⚙</Text>
             <View style={styles.notificationDot} />
           </TouchableOpacity>
         </View>
 
+        {/* Recording Duration */}
+        {isRecording && (
+          <View style={styles.durationContainer}>
+            <Animated.View 
+              style={[
+                styles.recordingIndicator,
+                {
+                  transform: [{ scale: isPaused ? 1 : indicatorPulse }],
+                },
+              ]} 
+            />
+            <Text style={styles.durationText}>{formatDuration(displayDuration)}</Text>
+          </View>
+        )}
+
         {/* Main Content */}
         <View style={styles.content}>
-          {groups.length === 0 ? (
-            <View style={styles.noGroupContainer}>
-              <Text style={styles.noGroupText}>No groups yet!</Text>
-              <Text style={styles.noGroupSubtext}>
-                Create or join a group to start recording
-              </Text>
-            </View>
-          ) : (
-            <>
-              {!isRecording && renderIdleState()}
-              {isRecording && !isPaused && renderRecordingState()}
-              {isRecording && isPaused && renderPausedState()}
-            </>
-          )}
+          {!isRecording && renderIdleState()}
+          {isRecording && !isPaused && renderRecordingState()}
+          {isRecording && isPaused && renderPausedState()}
         </View>
+
+        {/* Upload Status */}
+        {isRecording && chunksUploaded > 0 && (
+          <View style={styles.statusContainer}>
+            <Text style={styles.statusText}>
+              {chunksUploaded} chunk{chunksUploaded !== 1 ? 's' : ''} uploaded
+            </Text>
+          </View>
+        )}
       </SafeAreaView>
     </LinearGradient>
   );
@@ -295,63 +458,93 @@ const styles = StyleSheet.create({
   topNav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingHorizontal: 24,
+    paddingTop: 16,
   },
   navButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  navIcon: {
-    fontSize: 24,
+  navIconText: {
+    fontSize: 26,
+    color: '#FFFFFF',
   },
   notificationDot: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    top: 10,
+    right: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: '#FF3B30',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
   content: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 32,
   },
   titleText: {
-    fontSize: 36,
-    fontWeight: '400',
+    fontSize: 32,
+    fontWeight: '600',
     color: '#FFFFFF',
     textAlign: 'center',
-    marginBottom: 80,
-    letterSpacing: 0.5,
+    marginBottom: 64,
+    letterSpacing: 0.3,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  subtitleText: {
+    fontSize: 16,
+    fontWeight: '400',
+    color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'center',
+    marginTop: 32,
+    letterSpacing: 0.2,
+  },
+  mainButtonContainer: {
+    width: 300,
+    height: 300,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   logoButton: {
-    width: 240,
-    height: 240,
+    width: 220,
+    height: 220,
     justifyContent: 'center',
     alignItems: 'center',
   },
   logoCircle: {
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    borderWidth: 6,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    borderWidth: 5,
     borderColor: '#FFFFFF',
-    backgroundColor: '#ED4545',
+    backgroundColor: '#8B1A1A',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
   },
   logoImage: {
-    width: '80%',
-    height: '80%',
+    width: '100%',
+    height: '100%',
   },
   recordingContainer: {
     width: 300,
@@ -361,71 +554,88 @@ const styles = StyleSheet.create({
   },
   pulseCircle: {
     position: 'absolute',
-    borderRadius: 150,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderRadius: 160,
+    borderWidth: 2.5,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
   },
   pulseCircle1: {
-    width: 240,
-    height: 240,
+    width: 220,
+    height: 220,
   },
   pulseCircle2: {
-    width: 280,
-    height: 280,
+    width: 260,
+    height: 260,
   },
   pulseCircle3: {
-    width: 320,
-    height: 320,
+    width: 300,
+    height: 300,
   },
-  controlButtons: {
+  recordingControls: {
     flexDirection: 'row',
-    marginTop: 80,
-    gap: 40,
+    height: 64,
+    gap: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  controlButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 3,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  controlsPlaceholder: {
+    height: 64,
+  },
+  controlNavButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  playIcon: {
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderLeftWidth: 20,
-    borderRightWidth: 0,
-    borderTopWidth: 12,
-    borderBottomWidth: 12,
-    borderLeftColor: '#FFFFFF',
-    borderRightColor: 'transparent',
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    marginLeft: 4,
-  },
-  stopIcon: {
-    width: 24,
-    height: 24,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 2,
-  },
-  noGroupContainer: {
-    alignItems: 'center',
-    padding: 32,
-  },
-  noGroupText: {
+  controlIcon: {
     fontSize: 24,
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  durationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 24,
+    alignSelf: 'center',
+    marginTop: 16,
+  },
+  recordingIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF3B30',
+    marginRight: 10,
+  },
+  durationText: {
+    fontSize: 20,
     fontWeight: '600',
     color: '#FFFFFF',
-    marginBottom: 12,
+    fontVariant: ['tabular-nums'],
   },
-  noGroupSubtext: {
-    fontSize: 16,
+  statusContainer: {
+    position: 'absolute',
+    bottom: 40,
+    alignSelf: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 16,
+  },
+  statusText: {
+    fontSize: 12,
     color: 'rgba(255, 255, 255, 0.8)',
-    textAlign: 'center',
+    fontWeight: '500',
   },
 });

@@ -196,7 +196,7 @@ export default function StatsScreen() {
             </View>
 
             {/* Group Leaderboard */}
-            <Text style={styles.sectionTitle}>Leaderboard 🏆</Text>
+            <Text style={styles.sectionTitle}>Leaderboard</Text>
             {stats.leaderboard.length === 0 ? (
               <Text style={styles.emptyText}>No data for this period</Text>
             ) : (

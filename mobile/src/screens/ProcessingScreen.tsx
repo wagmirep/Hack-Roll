@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -22,32 +22,82 @@ interface Props {
   route: ProcessingScreenRouteProp;
 }
 
+const SINGLISH_MESSAGES = [
+  'Wait ah, collecting audio chunks leh...',
+  'Aiyo, processing your recording...',
+  'Walao, need some time to process ah...',
+  'Steady lah, almost done loading...',
+  'Sibei long sia, but wait ah...',
+  'Chop chop, processing now...',
+];
+
 export default function ProcessingScreen({ navigation, route }: Props) {
   const { sessionId } = route.params;
-  const { status, progress, error } = useSessionStatus(sessionId);
+  // const { status, progress, error } = useSessionStatus(sessionId);
+
+  // TEMPORARY: Fake loading progress
+  const [fakeProgress, setFakeProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const progress = fakeProgress;
 
   const spinValue = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
+  const [messageIndex, setMessageIndex] = useState(0);
+
+  // TEMPORARY: Fake progress increment
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFakeProgress((prev) => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          // Navigate to Wrapped screen after a short delay
+          setTimeout(() => {
+            navigation.replace('Wrapped', { sessionId });
+          }, 500);
+          return 100;
+        }
+        // Increment by 1% every 100ms (complete in ~10 seconds)
+        return prev + 1;
+      });
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [navigation, sessionId]);
+
+  // useEffect(() => {
+  //   if (status === 'ready_for_claiming' || status === 'completed') {
+  //     // Navigate to Wrapped screen with session data
+  //     navigation.replace('Wrapped', { sessionId });
+  //   } else if (status === 'error') {
+  //     // Stay on screen to show error
+  //   }
+  // }, [status, sessionId, navigation]);
 
   useEffect(() => {
-    if (status === 'ready_for_claiming') {
-      navigation.replace('Claiming', { sessionId });
-    } else if (status === 'error') {
-      // Stay on screen to show error
-    }
-  }, [status, sessionId, navigation]);
-
-  useEffect(() => {
-    // Spinning animation
-    Animated.loop(
-      Animated.timing(spinValue, {
-        toValue: 1,
-        duration: 2000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    ).start();
-  }, []);
+    // Spinning animation - use sequence with reset to ensure continuous loop
+    const spinAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(spinValue, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+        Animated.timing(spinValue, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    
+    spinAnimation.start();
+    
+    // Cleanup: stop animation when component unmounts
+    return () => {
+      spinAnimation.stop();
+    };
+  }, [spinValue]);
 
   useEffect(() => {
     // Progress bar animation
@@ -58,6 +108,17 @@ export default function ProcessingScreen({ navigation, route }: Props) {
     }).start();
   }, [progress]);
 
+  // Cycle through Singlish messages
+  useEffect(() => {
+    if (progress < 30 && !error) {
+      const interval = setInterval(() => {
+        setMessageIndex((prev) => (prev + 1) % SINGLISH_MESSAGES.length);
+      }, 2000); // Change message every 2 seconds
+
+      return () => clearInterval(interval);
+    }
+  }, [progress, error]);
+
   const spin = spinValue.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
@@ -66,7 +127,7 @@ export default function ProcessingScreen({ navigation, route }: Props) {
   const getStatusMessage = (): string => {
     if (error) return 'Error processing audio';
 
-    if (progress < 30) return 'Concatenating audio chunks...';
+    if (progress < 30) return SINGLISH_MESSAGES[messageIndex];
     if (progress < 50) return 'Detecting speakers...';
     if (progress < 70) return 'Transcribing conversation...';
     if (progress < 90) return 'Alamak need to analyse word usage...';
@@ -75,7 +136,9 @@ export default function ProcessingScreen({ navigation, route }: Props) {
 
   return (
     <LinearGradient
-      colors={['#E88080', '#ED6B6B']}
+      colors={['#6B1B1B', '#A64545']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
       style={styles.container}
     >
       <SafeAreaView style={styles.safeArea}>
@@ -86,7 +149,7 @@ export default function ProcessingScreen({ navigation, route }: Props) {
               <Image
                 source={require('../../assets/images/rabak-logo.jpg')}
                 style={styles.logoImage}
-                resizeMode="contain"
+                resizeMode="cover"
               />
             </View>
           </View>
@@ -165,10 +228,10 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   logoCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 4,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    borderWidth: 5,
     borderColor: '#FFFFFF',
     backgroundColor: '#ED4545',
     justifyContent: 'center',
@@ -176,8 +239,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   logoImage: {
-    width: '70%',
-    height: '70%',
+    width: '100%',
+    height: '100%',
   },
   title: {
     fontSize: 28,

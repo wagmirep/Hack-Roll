@@ -9,7 +9,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  SafeAreaView,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../contexts/AuthContext';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
@@ -63,82 +65,100 @@ export default function SignupScreen({ navigation }: Props) {
   };
 
   return (
-    <KeyboardAvoidingView 
+    <LinearGradient
+      colors={['#6B1B1B', '#A64545']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.content}>
-          <Text style={styles.title}>Join LahStats</Text>
-          <Text style={styles.subtitle}>Start tracking your Singlish! 🎉</Text>
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView 
+          style={styles.keyboardView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <ScrollView contentContainerStyle={styles.scrollContent}>
+            <View style={styles.content}>
+              <Text style={styles.title}>Join Rabak</Text>
+              <Text style={styles.subtitle}>Start tracking your Singlish!</Text>
 
-          <View style={styles.form}>
-            <TextInput
-              style={styles.input}
-              placeholder="Username"
-              value={username}
-              onChangeText={setUsername}
-              autoCapitalize="none"
-              editable={!loading}
-            />
+              <View style={styles.form}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Username"
+                  placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                  value={username}
+                  onChangeText={setUsername}
+                  autoCapitalize="none"
+                  editable={!loading}
+                />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              editable={!loading}
-            />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Email"
+                  placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  editable={!loading}
+                />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              editable={!loading}
-            />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Password"
+                  placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  editable={!loading}
+                />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Confirm Password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              editable={!loading}
-            />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Confirm Password"
+                  placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry
+                  editable={!loading}
+                />
 
-            <TouchableOpacity 
-              style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handleSignup}
-              disabled={loading}
-            >
-              <Text style={styles.buttonText}>
-                {loading ? 'Creating Account...' : 'Sign Up'}
-              </Text>
-            </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.button, loading && styles.buttonDisabled]}
+                  onPress={handleSignup}
+                  disabled={loading}
+                >
+                  <Text style={styles.buttonText}>
+                    {loading ? 'Creating Account...' : 'Sign Up'}
+                  </Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity 
-              onPress={() => navigation.navigate('Login')}
-              disabled={loading}
-            >
-              <Text style={styles.linkText}>
-                Already have an account? <Text style={styles.linkBold}>Sign In</Text>
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+                <TouchableOpacity 
+                  onPress={() => navigation.navigate('Login')}
+                  disabled={loading}
+                >
+                  <Text style={styles.linkText}>
+                    Already have an account? <Text style={styles.linkBold}>Sign In</Text>
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+  },
+  safeArea: {
+    flex: 1,
+  },
+  keyboardView: {
+    flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
@@ -147,17 +167,19 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 24,
+    paddingTop: 40,
+    paddingBottom: 40,
   },
   title: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 18,
-    color: '#666',
+    color: 'rgba(255, 255, 255, 0.8)',
     textAlign: 'center',
     marginBottom: 48,
   },
@@ -165,14 +187,17 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   input: {
-    backgroundColor: '#F2F2F7',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
     padding: 16,
     borderRadius: 12,
     fontSize: 16,
     marginBottom: 16,
+    color: '#FFFFFF',
   },
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#FFFFFF',
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -182,7 +207,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
+    color: '#6B1B1B',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -190,10 +215,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 24,
     fontSize: 14,
-    color: '#666',
+    color: 'rgba(255, 255, 255, 0.7)',
   },
   linkBold: {
-    color: '#007AFF',
+    color: '#FFFFFF',
     fontWeight: '600',
   },
 });
