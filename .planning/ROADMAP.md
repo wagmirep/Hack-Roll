@@ -1,7 +1,7 @@
 # LahStats ML Services — Roadmap
 
 **Milestone:** v1.0 — Working ML Pipeline
-**Status:** In Progress (Phases 1-3 Complete)
+**Status:** Complete (All Phases Done)
 
 ---
 
@@ -71,18 +71,24 @@
 
 ---
 
-## Phase 4: Processing Pipeline Integration
+## Phase 4: Processing Pipeline Integration ✅
 
 **Goal:** Wire diarization + transcription into processor.py
 
+**Status:** Complete
+
 **Delivers:**
-- `backend/processor.py` fully implemented
-- `process_session(session_id)` orchestrates full pipeline:
-  1. Concatenate audio chunks
-  2. Run diarization → speaker segments
-  3. For each segment: transcribe → correct → count words
-  4. Generate 5-second sample clips per speaker
-  5. Return structured results for database storage
+- ✅ `backend/processor.py` fully implemented (540 lines)
+- ✅ `process_session(session_id)` orchestrates full pipeline:
+  1. Concatenate audio chunks (`concatenate_chunks()`)
+  2. Run diarization → speaker segments (`run_diarization()`)
+  3. For each segment: transcribe → correct → count words (`transcribe_and_count()`)
+  4. Generate 5-second sample clips per speaker (`generate_speaker_samples()`)
+  5. Return structured results for database storage (`save_speaker_results()`)
+- ✅ Progress tracking with stage weights (0-100%)
+- ✅ Error handling with ProcessingError exceptions
+- ✅ Temp file cleanup on completion/failure
+- ✅ Sync wrapper for Redis worker (`process_session_sync()`)
 
 **Key files:**
 - `backend/processor.py`
@@ -98,16 +104,16 @@
 | 1 | Model Setup & Validation | ✅ Complete | — |
 | 2 | Speaker Diarization Service | ✅ Complete | Phase 1 |
 | 3 | ASR Transcription Service | ✅ Complete | Phase 1 |
-| 4 | Processing Pipeline Integration | Not Started | Phase 2, 3 |
+| 4 | Processing Pipeline Integration | ✅ Complete | Phase 2, 3 |
 
 **Notes:**
-- Phases 1-3 completed via parallel agent development (4 agents)
-- Phase 4 requires both services complete — ready to start
+- All phases completed via parallel agent development
 - Fine-tuning data prep also complete (Agent 4): `ml/scripts/prepare_singlish_data.py`, `ml/scripts/filter_imda.py`
-- 95 unit tests passing across backend and ML
+- 95+ unit tests passing across backend and ML
+- **v1.0 ML Pipeline is feature-complete**
 
 ---
 
 *Created: 2026-01-17*
-*Updated: 2026-01-17 — Phases 1-3 complete*
+*Updated: 2026-01-17 — All phases complete, v1.0 ML Pipeline done*
 *Milestone: v1.0*
