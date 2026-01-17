@@ -190,12 +190,32 @@ def diarize_audio(audio_path: str, min_segment_duration: float = 0.5) -> List[Sp
     try:
         pipeline = get_diarization_pipeline()
 
-        # Run diarization
-        diarization_result = pipeline(audio_path)
+        # Preload audio with soundfile to bypass torchcodec requirement on Windows
+        # pyannote 4.x accepts {'waveform': tensor, 'sample_rate': int} format
+        audio_data, sample_rate = sf.read(audio_path)
+
+        # Convert to torch tensor: (channels, samples) format
+        if audio_data.ndim == 1:
+            # Mono audio - add channel dimension
+            waveform = torch.from_numpy(audio_data).float().unsqueeze(0)
+        else:
+            # Multi-channel - transpose to (channels, samples)
+            waveform = torch.from_numpy(audio_data.T).float()
+
+        # Create audio input dict for pyannote
+        audio_input = {"waveform": waveform, "sample_rate": sample_rate}
+
+        logger.info(f"Audio loaded: {waveform.shape}, {sample_rate}Hz")
+
+        # Run diarization with preloaded audio
+        diarization_result = pipeline(audio_input)
 
         # Convert to SpeakerSegment objects
+        # pyannote 4.x returns DiarizeOutput, access speaker_diarization Annotation
+        annotation = getattr(diarization_result, 'speaker_diarization', diarization_result)
+
         segments = []
-        for turn, _, speaker in diarization_result.itertracks(yield_label=True):
+        for turn, _, speaker in annotation.itertracks(yield_label=True):
             duration = turn.end - turn.start
 
             # Skip very short segments (likely noise)
