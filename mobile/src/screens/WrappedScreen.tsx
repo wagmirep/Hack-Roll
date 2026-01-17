@@ -1,23 +1,28 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, createContext, useContext } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableWithoutFeedback,
   TouchableOpacity,
-  Dimensions,
+  useWindowDimensions,
   ActivityIndicator,
   Animated,
   Easing,
+  Share,
+  Alert,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { RecordStackParamList } from '../navigation/MainNavigator';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { Audio } from 'expo-av';
 import { api } from '../api/client';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// Context for responsive dimensions
+const DimensionsContext = createContext({ width: 400, height: 800 });
+const useDimensions = () => useContext(DimensionsContext);
 
 type WrappedScreenNavigationProp = StackNavigationProp<RecordStackParamList, 'Wrapped'>;
 type WrappedScreenRouteProp = RouteProp<RecordStackParamList, 'Wrapped'>;
@@ -32,6 +37,14 @@ interface TopWord {
   count: number;
 }
 
+interface SpeakerData {
+  id: string;
+  name: string;
+  topWords: TopWord[];
+  mostUsedWord: string;
+  audioClipUrl?: string;
+}
+
 interface WrappedData {
   speakerCount: number;
   duration: number;
@@ -39,6 +52,7 @@ interface WrappedData {
   mostUsedWord: string;
   totalWords: number;
   singlishWordsCount: number;
+  speakers: SpeakerData[];
 }
 
 const numberToWord = (num: number): string => {
@@ -46,16 +60,21 @@ const numberToWord = (num: number): string => {
   return num <= 10 ? words[num] : num.toString();
 };
 
+// Capitalize first letter
+const capitalize = (str: string): string => {
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+};
+
 // ============================================================================
-// SLIDE 1: SPEAKERS
+// SLIDE 1: SPEAKERS - Cyan-Pink gradient with stepped angular shapes
 // ============================================================================
 function SpeakersSlide({ count, isActive }: { count: number; isActive: boolean }) {
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useDimensions();
   const shape1Anim = useRef(new Animated.Value(0)).current;
   const shape2Anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (isActive) {
-      // Reset and play animations
       shape1Anim.setValue(0);
       shape2Anim.setValue(0);
       
@@ -79,51 +98,23 @@ function SpeakersSlide({ count, isActive }: { count: number; isActive: boolean }
 
   const shape1Style = {
     transform: [
-      {
-        translateX: shape1Anim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [150, 0],
-        }),
-      },
-      {
-        translateY: shape1Anim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [-150, 0],
-        }),
-      },
-      {
-        scale: shape1Anim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0.5, 1],
-        }),
-      },
+      { translateX: shape1Anim.interpolate({ inputRange: [0, 1], outputRange: [150, 0] }) },
+      { translateY: shape1Anim.interpolate({ inputRange: [0, 1], outputRange: [-150, 0] }) },
+      { scale: shape1Anim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) },
     ],
     opacity: shape1Anim,
   };
 
   const shape2Style = {
     transform: [
-      {
-        translateX: shape2Anim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [-150, 0],
-        }),
-      },
-      {
-        translateY: shape2Anim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [150, 0],
-        }),
-      },
-      {
-        scale: shape2Anim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0.5, 1],
-        }),
-      },
+      { translateX: shape2Anim.interpolate({ inputRange: [0, 1], outputRange: [-150, 0] }) },
+      { translateY: shape2Anim.interpolate({ inputRange: [0, 1], outputRange: [150, 0] }) },
+      { scale: shape2Anim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) },
     ],
     opacity: shape2Anim,
   };
+
+  const shapeSize = SCREEN_WIDTH * 0.9;
 
   return (
     <View style={styles.slide}>
@@ -135,24 +126,24 @@ function SpeakersSlide({ count, isActive }: { count: number; isActive: boolean }
       />
       
       {/* Top Right Stepped Shapes */}
-      <Animated.View style={[styles.shapeContainer, styles.topRightShape, shape1Style]}>
-        <View style={[styles.steppedShape, { backgroundColor: 'rgba(236, 72, 153, 0.5)', width: 300, height: 250 }]} />
-        <View style={[styles.steppedShape, { backgroundColor: 'rgba(236, 72, 153, 0.7)', width: 260, height: 210, top: 30, right: 30 }]} />
-        <View style={[styles.steppedShape, { backgroundColor: 'rgba(236, 72, 153, 0.9)', width: 220, height: 170, top: 60, right: 60 }]} />
+      <Animated.View style={[{ position: 'absolute', top: -40, right: -40 }, shape1Style]}>
+        <View style={[styles.angularShape, { width: shapeSize, height: shapeSize * 0.8, backgroundColor: 'rgba(236, 72, 153, 0.5)' }]} />
+        <View style={[styles.angularShape, { width: shapeSize * 0.9, height: shapeSize * 0.7, top: 24, right: 24, backgroundColor: 'rgba(236, 72, 153, 0.7)' }]} />
+        <View style={[styles.angularShape, { width: shapeSize * 0.8, height: shapeSize * 0.6, top: 48, right: 48, backgroundColor: 'rgba(236, 72, 153, 0.9)' }]} />
       </Animated.View>
       
       {/* Bottom Left Stepped Shapes */}
-      <Animated.View style={[styles.shapeContainer, styles.bottomLeftShape, shape2Style]}>
-        <View style={[styles.steppedShape, { backgroundColor: 'rgba(239, 68, 68, 0.5)', width: 300, height: 250 }]} />
-        <View style={[styles.steppedShape, { backgroundColor: 'rgba(239, 68, 68, 0.7)', width: 260, height: 210, bottom: 30, left: 30 }]} />
-        <View style={[styles.steppedShape, { backgroundColor: 'rgba(239, 68, 68, 0.9)', width: 220, height: 170, bottom: 60, left: 60 }]} />
+      <Animated.View style={[{ position: 'absolute', bottom: -40, left: -40 }, shape2Style]}>
+        <View style={[styles.angularShape, { width: shapeSize, height: shapeSize * 0.8, backgroundColor: 'rgba(239, 68, 68, 0.5)' }]} />
+        <View style={[styles.angularShape, { width: shapeSize * 0.9, height: shapeSize * 0.7, bottom: 24, left: 24, backgroundColor: 'rgba(239, 68, 68, 0.7)' }]} />
+        <View style={[styles.angularShape, { width: shapeSize * 0.8, height: shapeSize * 0.6, bottom: 48, left: 48, backgroundColor: 'rgba(239, 68, 68, 0.9)' }]} />
       </Animated.View>
 
       <View style={styles.centeredContent}>
-        <Text style={styles.speakersText}>
-          You had{' '}
+        <Text style={[styles.speakersText, { fontSize: SCREEN_WIDTH * 0.115, lineHeight: SCREEN_WIDTH * 0.14 }]}>
+          You had{'\n'}
           <Text style={styles.boldBlack}>{numberToWord(count)}</Text>
-          {' '}speakers this yap session
+          {'\n'}speakers this{'\n'}yap session
         </Text>
       </View>
     </View>
@@ -160,9 +151,10 @@ function SpeakersSlide({ count, isActive }: { count: number; isActive: boolean }
 }
 
 // ============================================================================
-// SLIDE 2: DURATION
+// SLIDE 2: DURATION - Yellow with purple arc
 // ============================================================================
 function DurationSlide({ seconds, isActive }: { seconds: number; isActive: boolean }) {
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useDimensions();
   const arcAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -179,63 +171,61 @@ function DurationSlide({ seconds, isActive }: { seconds: number; isActive: boole
 
   const arcStyle = {
     transform: [
-      {
-        translateX: arcAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [-100, 0],
-        }),
-      },
-      {
-        translateY: arcAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [-100, 0],
-        }),
-      },
-      {
-        scale: arcAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0.3, 1],
-        }),
-      },
+      { translateX: arcAnim.interpolate({ inputRange: [0, 1], outputRange: [-100, 0] }) },
+      { translateY: arcAnim.interpolate({ inputRange: [0, 1], outputRange: [-100, 0] }) },
+      { scale: arcAnim.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }) },
     ],
     opacity: arcAnim,
   };
 
+  const arcSize = SCREEN_WIDTH * 1.2;
+
   return (
     <View style={[styles.slide, { backgroundColor: '#FDE047' }]}>
       {/* Arc decoration */}
-      <Animated.View style={[styles.arcContainer, arcStyle]}>
-        <View style={[styles.arc, { backgroundColor: 'rgba(96, 165, 250, 0.6)', width: 400, height: 400 }]} />
-        <View style={[styles.arc, { backgroundColor: 'rgba(167, 139, 250, 0.5)', width: 320, height: 320, top: 40, left: 40 }]} />
-        <View style={[styles.arc, { backgroundColor: 'rgba(196, 181, 253, 0.4)', width: 240, height: 240, top: 80, left: 80 }]} />
+      <Animated.View style={[{ position: 'absolute', top: -arcSize * 0.4, left: -arcSize * 0.4 }, arcStyle]}>
+        <View style={[styles.arc, { width: arcSize, height: arcSize, backgroundColor: 'rgba(96, 165, 250, 0.6)', borderBottomRightRadius: arcSize }]} />
+        <View style={[styles.arc, { width: arcSize * 0.8, height: arcSize * 0.8, top: arcSize * 0.1, left: arcSize * 0.1, backgroundColor: 'rgba(167, 139, 250, 0.5)', borderBottomRightRadius: arcSize * 0.8 }]} />
+        <View style={[styles.arc, { width: arcSize * 0.6, height: arcSize * 0.6, top: arcSize * 0.2, left: arcSize * 0.2, backgroundColor: 'rgba(196, 181, 253, 0.4)', borderBottomRightRadius: arcSize * 0.6 }]} />
       </Animated.View>
 
       <View style={styles.centeredContent}>
-        <Text style={styles.durationTitle}>You guys yapped for a total of</Text>
-        <Text style={styles.durationNumber}>{seconds}</Text>
-        <Text style={styles.durationUnit}>seconds</Text>
-        <Text style={styles.durationSubtitle}>Drop it like it's hot</Text>
+        <Text style={[styles.durationTitle, { fontSize: SCREEN_WIDTH * 0.09 }]}>You guys yapped{'\n'}for a total of</Text>
+        <Text style={[styles.durationNumber, { fontSize: SCREEN_WIDTH * 0.32, lineHeight: SCREEN_WIDTH * 0.35 }]}>{seconds}</Text>
+        <Text style={[styles.durationUnit, { fontSize: SCREEN_WIDTH * 0.1 }]}>seconds</Text>
+        <Text style={[styles.durationSubtitle, { fontSize: SCREEN_WIDTH * 0.055 }]}>Drop it like it's hot</Text>
       </View>
     </View>
   );
 }
 
 // ============================================================================
-// SLIDE 3: TOP WORDS
+// SLIDE 3: TOP WORDS - Blue gradient with diagonal
 // ============================================================================
 function TopWordsSlide({ words, isActive }: { words: TopWord[]; isActive: boolean }) {
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useDimensions();
   const fadeAnims = useRef(words.slice(0, 5).map(() => new Animated.Value(0))).current;
+  const diagonalAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (isActive) {
-      // Reset all animations
+      diagonalAnim.setValue(0);
       fadeAnims.forEach(anim => anim.setValue(0));
       
+      // Diagonal animation
+      Animated.timing(diagonalAnim, {
+        toValue: 1,
+        duration: 1200,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+
+      // Word fade-in animations
       const animations = fadeAnims.map((anim, index) =>
         Animated.timing(anim, {
           toValue: 1,
           duration: 600,
-          delay: index * 150,
+          delay: 200 + index * 100,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         })
@@ -243,6 +233,14 @@ function TopWordsSlide({ words, isActive }: { words: TopWord[]; isActive: boolea
       Animated.parallel(animations).start();
     }
   }, [isActive]);
+
+  const diagonalStyle = {
+    transform: [
+      { translateX: diagonalAnim.interpolate({ inputRange: [0, 1], outputRange: [SCREEN_WIDTH, 0] }) },
+      { translateY: diagonalAnim.interpolate({ inputRange: [0, 1], outputRange: [-SCREEN_HEIGHT * 0.3, 0] }) },
+    ],
+    opacity: diagonalAnim,
+  };
 
   return (
     <View style={styles.slide}>
@@ -255,10 +253,12 @@ function TopWordsSlide({ words, isActive }: { words: TopWord[]; isActive: boolea
       />
       
       {/* Diagonal shape */}
-      <View style={styles.diagonalShape} />
+      <Animated.View style={[styles.diagonalContainer, diagonalStyle]}>
+        <View style={styles.diagonalShape} />
+      </Animated.View>
 
-      <View style={[styles.centeredContent, { alignItems: 'flex-start', paddingHorizontal: 40 }]}>
-        <Text style={styles.topWordsTitle}>Your group's favorite Singlish words</Text>
+      <View style={styles.topWordsContent}>
+        <Text style={[styles.topWordsTitle, { fontSize: SCREEN_WIDTH * 0.095 }]}>Your group's{'\n'}favorite Singlish{'\n'}word</Text>
         <View style={styles.wordsList}>
           {words.slice(0, 5).map((item, index) => (
             <Animated.View
@@ -267,19 +267,17 @@ function TopWordsSlide({ words, isActive }: { words: TopWord[]; isActive: boolea
                 styles.wordRow,
                 {
                   opacity: fadeAnims[index] || new Animated.Value(1),
-                  transform: [
-                    {
-                      translateY: (fadeAnims[index] || new Animated.Value(1)).interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [20, 0],
-                      }),
-                    },
-                  ],
+                  transform: [{
+                    translateY: (fadeAnims[index] || new Animated.Value(1)).interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [20, 0],
+                    }),
+                  }],
                 },
               ]}
             >
-              <Text style={styles.wordRank}>{index + 1}</Text>
-              <Text style={styles.wordText}>{item.word}</Text>
+              <Text style={[styles.wordRank, { fontSize: SCREEN_WIDTH * 0.15, width: SCREEN_WIDTH * 0.22 }]}>{index + 1}</Text>
+              <Text style={[styles.wordText, { fontSize: SCREEN_WIDTH * 0.11 }]}>{capitalize(item.word)}</Text>
             </Animated.View>
           ))}
         </View>
@@ -289,9 +287,10 @@ function TopWordsSlide({ words, isActive }: { words: TopWord[]; isActive: boolea
 }
 
 // ============================================================================
-// SLIDE 4: MOST USED WORD
+// SLIDE 4: MOST USED WORD - Black with green triangles
 // ============================================================================
 function MostUsedWordSlide({ word, isActive }: { word: string; isActive: boolean }) {
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useDimensions();
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const triangleAnim = useRef(new Animated.Value(0)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
@@ -301,7 +300,6 @@ function MostUsedWordSlide({ word, isActive }: { word: string; isActive: boolean
       triangleAnim.setValue(0);
       pulseAnim.setValue(1);
       
-      // Triangle animation
       Animated.timing(triangleAnim, {
         toValue: 1,
         duration: 1500,
@@ -309,7 +307,6 @@ function MostUsedWordSlide({ word, isActive }: { word: string; isActive: boolean
         useNativeDriver: true,
       }).start();
 
-      // Pulse animation
       pulseLoop.current = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
@@ -331,50 +328,51 @@ function MostUsedWordSlide({ word, isActive }: { word: string; isActive: boolean
       pulseLoop.current?.stop();
     }
     
-    return () => {
-      pulseLoop.current?.stop();
-    };
+    return () => { pulseLoop.current?.stop(); };
   }, [isActive]);
 
   const triangleStyle = {
     transform: [
-      {
-        translateX: triangleAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [-150, 0],
-        }),
-      },
-      {
-        translateY: triangleAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [-150, 0],
-        }),
-      },
-      {
-        scale: triangleAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0.5, 1],
-        }),
-      },
+      { translateX: triangleAnim.interpolate({ inputRange: [0, 1], outputRange: [-150, 0] }) },
+      { translateY: triangleAnim.interpolate({ inputRange: [0, 1], outputRange: [-150, 0] }) },
+      { scale: triangleAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) },
     ],
     opacity: triangleAnim,
   };
 
+  const triangleSize = SCREEN_WIDTH * 0.85;
+
   return (
     <View style={[styles.slide, { backgroundColor: '#000000' }]}>
       {/* Green triangle layers */}
-      <Animated.View style={[styles.triangleContainer, triangleStyle]}>
-        <View style={[styles.triangle, { borderLeftWidth: 300, borderBottomWidth: 300, borderLeftColor: 'rgba(34, 197, 94, 0.9)' }]} />
-        <View style={[styles.triangle, { borderLeftWidth: 250, borderBottomWidth: 250, borderLeftColor: 'rgba(34, 197, 94, 0.7)', top: 25, left: 25 }]} />
-        <View style={[styles.triangle, { borderLeftWidth: 200, borderBottomWidth: 200, borderLeftColor: 'rgba(34, 197, 94, 0.5)', top: 50, left: 50 }]} />
+      <Animated.View style={[{ position: 'absolute', top: 0, left: 0 }, triangleStyle]}>
+        <View style={[styles.triangle, { 
+          borderLeftWidth: triangleSize, 
+          borderBottomWidth: triangleSize, 
+          borderLeftColor: 'rgba(74, 222, 128, 0.9)',
+        }]} />
+        <View style={[styles.triangle, { 
+          borderLeftWidth: triangleSize * 0.85, 
+          borderBottomWidth: triangleSize * 0.85, 
+          borderLeftColor: 'rgba(74, 222, 128, 0.7)',
+          top: triangleSize * 0.08,
+          left: triangleSize * 0.08,
+        }]} />
+        <View style={[styles.triangle, { 
+          borderLeftWidth: triangleSize * 0.7, 
+          borderBottomWidth: triangleSize * 0.7, 
+          borderLeftColor: 'rgba(74, 222, 128, 0.5)',
+          top: triangleSize * 0.16,
+          left: triangleSize * 0.16,
+        }]} />
       </Animated.View>
 
       <View style={styles.centeredContent}>
-        <Text style={styles.mostUsedTitle}>
-          And there was one singlish word you guys used again, and again, and again...
+        <Text style={[styles.mostUsedTitle, { fontSize: SCREEN_WIDTH * 0.065, lineHeight: SCREEN_WIDTH * 0.09 }]}>
+          And there was one{'\n'}singlish word you guys{'\n'}used again, and again,{'\n'}and again...
         </Text>
-        <Animated.Text style={[styles.mostUsedWord, { transform: [{ scale: pulseAnim }] }]}>
-          {word}
+        <Animated.Text style={[styles.mostUsedWord, { fontSize: SCREEN_WIDTH * 0.28, transform: [{ scale: pulseAnim }] }]}>
+          {capitalize(word)}
         </Animated.Text>
       </View>
     </View>
@@ -382,19 +380,18 @@ function MostUsedWordSlide({ word, isActive }: { word: string; isActive: boolean
 }
 
 // ============================================================================
-// SLIDE 5: FINAL
+// SLIDE 5: FINAL - Black with cyan/pink spiraling squares
 // ============================================================================
 function FinalSlide({ isActive }: { isActive: boolean }) {
-  const squareAnims = useRef([0, 1, 2, 3, 4, 5].map(() => new Animated.Value(0))).current;
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useDimensions();
+  const squareAnims = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
   const textAnims = useRef([0, 1, 2].map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
     if (isActive) {
-      // Reset all
       squareAnims.forEach(a => a.setValue(0));
       textAnims.forEach(a => a.setValue(0));
       
-      // Square animations
       squareAnims.forEach((anim, index) => {
         Animated.timing(anim, {
           toValue: 1,
@@ -405,7 +402,6 @@ function FinalSlide({ isActive }: { isActive: boolean }) {
         }).start();
       });
 
-      // Text animations
       textAnims.forEach((anim, index) => {
         Animated.timing(anim, {
           toValue: 1,
@@ -421,72 +417,69 @@ function FinalSlide({ isActive }: { isActive: boolean }) {
   const getSquareStyle = (index: number, isTopLeft: boolean) => {
     const anim = squareAnims[index] || new Animated.Value(1);
     const rotation = isTopLeft ? index * 5 : -index * 5;
+    const opacityValues = [0.8, 0.7, 0.6, 0.5];
     
     return {
       transform: [
-        {
-          translateX: anim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [isTopLeft ? -100 : 100, 0],
-          }),
-        },
-        {
-          translateY: anim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [isTopLeft ? -100 : 100, 0],
-          }),
-        },
+        { translateX: anim.interpolate({ inputRange: [0, 1], outputRange: [isTopLeft ? -100 : 100, 0] }) },
+        { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [isTopLeft ? -100 : 100, 0] }) },
         { rotate: `${rotation}deg` },
-        {
-          scale: anim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0.5, 1],
-          }),
-        },
+        { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) },
       ],
-      opacity: anim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, 0.8 - index * 0.15],
-      }),
+      opacity: anim.interpolate({ inputRange: [0, 1], outputRange: [0, opacityValues[index] || 0.5] }),
     };
   };
+
+  const squareBaseSize = SCREEN_WIDTH * 0.85;
 
   return (
     <View style={[styles.slide, { backgroundColor: '#000000' }]}>
       {/* Top-left cyan squares */}
-      {[0, 1, 2].map((i) => (
+      {[0, 1, 2, 3].map((i) => (
         <Animated.View
           key={`tl-${i}`}
           style={[
             styles.finalSquare,
             {
-              top: -60 + i * 25,
-              left: -60 + i * 25,
-              width: 280 - i * 40,
-              height: 280 - i * 40,
-              backgroundColor: `rgba(34, 211, 238, ${0.8 - i * 0.2})`,
+              top: -squareBaseSize * 0.15 + i * (squareBaseSize * 0.06),
+              left: -squareBaseSize * 0.15 + i * (squareBaseSize * 0.06),
+              width: squareBaseSize - i * (squareBaseSize * 0.12),
+              height: squareBaseSize - i * (squareBaseSize * 0.12),
             },
             getSquareStyle(i, true),
           ]}
-        />
+        >
+          <LinearGradient
+            colors={['#22D3EE', '#3B82F6']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+        </Animated.View>
       ))}
 
       {/* Bottom-right pink squares */}
-      {[0, 1, 2].map((i) => (
+      {[0, 1, 2, 3].map((i) => (
         <Animated.View
           key={`br-${i}`}
           style={[
             styles.finalSquare,
             {
-              bottom: -60 + i * 25,
-              right: -60 + i * 25,
-              width: 280 - i * 40,
-              height: 280 - i * 40,
-              backgroundColor: `rgba(236, 72, 153, ${0.8 - i * 0.2})`,
+              bottom: -squareBaseSize * 0.15 + i * (squareBaseSize * 0.06),
+              right: -squareBaseSize * 0.15 + i * (squareBaseSize * 0.06),
+              width: squareBaseSize - i * (squareBaseSize * 0.12),
+              height: squareBaseSize - i * (squareBaseSize * 0.12),
             },
-            getSquareStyle(i + 3, false),
+            getSquareStyle(i, false),
           ]}
-        />
+        >
+          <LinearGradient
+            colors={['#EC4899', '#F472B6']}
+            start={{ x: 1, y: 1 }}
+            end={{ x: 0, y: 0 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+        </Animated.View>
       ))}
 
       <View style={styles.centeredContent}>
@@ -494,15 +487,9 @@ function FinalSlide({ isActive }: { isActive: boolean }) {
           style={[
             styles.finalYour,
             {
+              fontSize: SCREEN_WIDTH * 0.15,
               opacity: textAnims[0],
-              transform: [
-                {
-                  translateY: textAnims[0].interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [20, 0],
-                  }),
-                },
-              ],
+              transform: [{ translateY: textAnims[0].interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
             },
           ]}
         >
@@ -512,15 +499,9 @@ function FinalSlide({ isActive }: { isActive: boolean }) {
           style={[
             styles.finalYapSession,
             {
+              fontSize: SCREEN_WIDTH * 0.16,
               opacity: textAnims[1],
-              transform: [
-                {
-                  translateY: textAnims[1].interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [20, 0],
-                  }),
-                },
-              ],
+              transform: [{ translateY: textAnims[1].interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
             },
           ]}
         >
@@ -530,20 +511,411 @@ function FinalSlide({ isActive }: { isActive: boolean }) {
           style={[
             styles.finalWrapped,
             {
+              fontSize: SCREEN_WIDTH * 0.13,
               opacity: textAnims[2],
-              transform: [
-                {
-                  translateY: textAnims[2].interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [20, 0],
-                  }),
-                },
-              ],
+              transform: [{ translateY: textAnims[2].interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
             },
           ]}
         >
           Wrapped
         </Animated.Text>
+      </View>
+    </View>
+  );
+}
+
+// ============================================================================
+// SLIDE 6+: SPEAKER WRAPPED - Individual speaker statistics
+// ============================================================================
+interface SpeakerWrappedSlideProps {
+  speaker: SpeakerData;
+  allSpeakers: SpeakerData[];
+  currentSpeakerIndex: number;
+  onSpeakerChange: (index: number) => void;
+  isActive: boolean;
+}
+
+function SpeakerWrappedSlide({ speaker, allSpeakers, currentSpeakerIndex, onSpeakerChange, isActive }: SpeakerWrappedSlideProps) {
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useDimensions();
+  const [isMuted, setIsMuted] = useState(false);
+  const [showSpeakerMenu, setShowSpeakerMenu] = useState(false);
+  const soundRef = useRef<Audio.Sound | null>(null);
+  
+  // Animations
+  const cornerTLAnim = useRef(new Animated.Value(0)).current;
+  const cornerTRAnim = useRef(new Animated.Value(0)).current;
+  const cornerBLAnim = useRef(new Animated.Value(0)).current;
+  const cornerBRAnim = useRef(new Animated.Value(0)).current;
+  const titleAnim = useRef(new Animated.Value(0)).current;
+  const wordAnim = useRef(new Animated.Value(0)).current;
+  const listAnims = useRef(speaker.topWords.slice(0, 5).map(() => new Animated.Value(0))).current;
+
+  // Auto-play audio on LOOP when slide becomes active
+  useEffect(() => {
+    const playAudio = async () => {
+      console.log('=== Speaker Audio Debug ===');
+      console.log('isActive:', isActive);
+      console.log('audioClipUrl:', speaker.audioClipUrl);
+      console.log('isMuted:', isMuted);
+      
+      if (isActive) {
+        try {
+          // Set up audio mode for playback
+          await Audio.setAudioModeAsync({
+            playsInSilentModeIOS: true,
+            staysActiveInBackground: false,
+            shouldDuckAndroid: true,
+          });
+          
+          // Unload previous sound if any
+          if (soundRef.current) {
+            await soundRef.current.unloadAsync();
+            soundRef.current = null;
+          }
+          
+          if (speaker.audioClipUrl) {
+            console.log('Attempting to play audio from:', speaker.audioClipUrl);
+            
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: speaker.audioClipUrl },
+              { 
+                shouldPlay: true, 
+                volume: isMuted ? 0 : 1.0,
+                isLooping: true,  // 🔁 LOOP THAT MF
+              }
+            );
+            soundRef.current = sound;
+            
+            // Listen for playback status
+            sound.setOnPlaybackStatusUpdate((status) => {
+              if (status.isLoaded) {
+                console.log('Audio playing:', status.isPlaying, 'looping:', status.isLooping);
+              }
+            });
+          } else {
+            console.log('No audio URL available for this speaker');
+          }
+        } catch (error) {
+          console.log('Audio playback error:', error);
+        }
+      }
+    };
+    
+    playAudio();
+    
+    // Cleanup on unmount or when slide becomes inactive
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
+    };
+  }, [isActive, speaker.audioClipUrl]);
+
+  // Handle mute toggle - update volume on existing looping audio
+  useEffect(() => {
+    const updateVolume = async () => {
+      if (soundRef.current) {
+        try {
+          await soundRef.current.setVolumeAsync(isMuted ? 0 : 1);
+          console.log('Volume updated:', isMuted ? 'MUTED' : 'UNMUTED');
+        } catch (error) {
+          console.log('Error updating volume:', error);
+        }
+      }
+    };
+    updateVolume();
+  }, [isMuted]);
+
+  useEffect(() => {
+    if (isActive) {
+      // Reset animations
+      cornerTLAnim.setValue(0);
+      cornerTRAnim.setValue(0);
+      cornerBLAnim.setValue(0);
+      cornerBRAnim.setValue(0);
+      titleAnim.setValue(0);
+      wordAnim.setValue(0);
+      listAnims.forEach(a => a.setValue(0));
+
+      // Corner animations
+      Animated.stagger(100, [
+        Animated.timing(cornerTLAnim, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(cornerTRAnim, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(cornerBLAnim, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(cornerBRAnim, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      // Title animation
+      Animated.timing(titleAnim, {
+        toValue: 1,
+        duration: 600,
+        delay: 200,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+
+      // Word pop animation
+      Animated.spring(wordAnim, {
+        toValue: 1,
+        delay: 300,
+        friction: 4,
+        tension: 50,
+        useNativeDriver: true,
+      }).start();
+
+      // List items animation
+      listAnims.forEach((anim, index) => {
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: 500,
+          delay: 400 + index * 100,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }).start();
+      });
+    }
+  }, [isActive]);
+
+  const cornerTLStyle = {
+    transform: [
+      { translateX: cornerTLAnim.interpolate({ inputRange: [0, 1], outputRange: [-50, 0] }) },
+      { translateY: cornerTLAnim.interpolate({ inputRange: [0, 1], outputRange: [-50, 0] }) },
+    ],
+    opacity: cornerTLAnim,
+  };
+
+  const cornerTRStyle = {
+    transform: [
+      { translateX: cornerTRAnim.interpolate({ inputRange: [0, 1], outputRange: [50, 0] }) },
+      { translateY: cornerTRAnim.interpolate({ inputRange: [0, 1], outputRange: [-50, 0] }) },
+    ],
+    opacity: cornerTRAnim,
+  };
+
+  const cornerBLStyle = {
+    transform: [
+      { translateX: cornerBLAnim.interpolate({ inputRange: [0, 1], outputRange: [-50, 0] }) },
+      { translateY: cornerBLAnim.interpolate({ inputRange: [0, 1], outputRange: [50, 0] }) },
+    ],
+    opacity: cornerBLAnim,
+  };
+
+  const cornerBRStyle = {
+    transform: [
+      { translateX: cornerBRAnim.interpolate({ inputRange: [0, 1], outputRange: [50, 0] }) },
+      { translateY: cornerBRAnim.interpolate({ inputRange: [0, 1], outputRange: [50, 0] }) },
+    ],
+    opacity: cornerBRAnim,
+  };
+
+  const titleStyle = {
+    opacity: titleAnim,
+    transform: [
+      { translateY: titleAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) },
+    ],
+  };
+
+  const wordStyle = {
+    opacity: wordAnim,
+    transform: [
+      { scale: wordAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) },
+    ],
+  };
+
+  const handleMuteToggle = () => {
+    setIsMuted(!isMuted);
+  };
+
+  const handleShare = async () => {
+    try {
+      const result = await Share.share({
+        message: `🎤 ${speaker.name}'s Singlish Wrapped!\n\nTop word: ${speaker.mostUsedWord}\n\nTop 5 words:\n${speaker.topWords.slice(0, 5).map((w, i) => `${i + 1}. ${w.word} (${w.count}x)`).join('\n')}\n\n#SinglishWrapped #YapSession`,
+        title: `${speaker.name}'s Singlish Wrapped`,
+      });
+      
+      if (result.action === Share.sharedAction) {
+        console.log('Shared successfully');
+      }
+    } catch (error: any) {
+      Alert.alert('Share Error', error.message);
+    }
+  };
+
+  const zigzagSize = SCREEN_WIDTH * 0.35;
+
+  return (
+    <View style={[styles.slide, { backgroundColor: '#FFE500' }]}>
+      {/* Zigzag Corner Decorations */}
+      <Animated.View style={[styles.cornerDecoration, { top: 0, left: 0 }, cornerTLStyle]}>
+        <View style={[styles.zigzagCorner, { width: zigzagSize, height: zigzagSize * 1.3 }]}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <View key={i} style={[styles.zigzagStep, {
+              top: i * (zigzagSize * 0.2),
+              left: 0,
+              width: zigzagSize * (0.4 - i * 0.05),
+              height: zigzagSize * 0.22,
+              backgroundColor: i % 2 === 0 ? '#FF1493' : '#FF69B4',
+            }]} />
+          ))}
+        </View>
+      </Animated.View>
+
+      <Animated.View style={[styles.cornerDecoration, { top: 0, right: 0 }, cornerTRStyle]}>
+        <View style={[styles.zigzagCorner, { width: zigzagSize, height: zigzagSize * 1.3, alignItems: 'flex-end' }]}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <View key={i} style={[styles.zigzagStep, {
+              top: i * (zigzagSize * 0.2),
+              right: 0,
+              width: zigzagSize * (0.4 - i * 0.05),
+              height: zigzagSize * 0.22,
+              backgroundColor: i % 2 === 0 ? '#FF1493' : '#FF69B4',
+            }]} />
+          ))}
+        </View>
+      </Animated.View>
+
+      <Animated.View style={[styles.cornerDecoration, { bottom: 0, left: 0 }, cornerBLStyle]}>
+        <View style={[styles.zigzagCorner, { width: zigzagSize, height: zigzagSize * 1.3, justifyContent: 'flex-end' }]}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <View key={i} style={[styles.zigzagStep, {
+              bottom: i * (zigzagSize * 0.2),
+              left: 0,
+              width: zigzagSize * (0.4 - i * 0.05),
+              height: zigzagSize * 0.22,
+              backgroundColor: i % 2 === 0 ? '#FF1493' : '#FF69B4',
+            }]} />
+          ))}
+        </View>
+      </Animated.View>
+
+      <Animated.View style={[styles.cornerDecoration, { bottom: 0, right: 0 }, cornerBRStyle]}>
+        <View style={[styles.zigzagCorner, { width: zigzagSize, height: zigzagSize * 1.3, alignItems: 'flex-end', justifyContent: 'flex-end' }]}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <View key={i} style={[styles.zigzagStep, {
+              bottom: i * (zigzagSize * 0.2),
+              right: 0,
+              width: zigzagSize * (0.4 - i * 0.05),
+              height: zigzagSize * 0.22,
+              backgroundColor: i % 2 === 0 ? '#FF1493' : '#FF69B4',
+            }]} />
+          ))}
+        </View>
+      </Animated.View>
+
+      {/* Main Content */}
+      <View style={styles.speakerContent}>
+        {/* Speaker Title */}
+        <Animated.Text style={[styles.speakerTitle, { fontSize: SCREEN_WIDTH * 0.065 }, titleStyle]}>
+          {speaker.name}'s Wrapped
+        </Animated.Text>
+
+        {/* Most Used Word - Large 3D Style */}
+        <Animated.View style={[styles.mostUsedWordContainer, wordStyle]}>
+          <Text style={[styles.speakerMostUsedWord, { fontSize: SCREEN_WIDTH * 0.2 }]}>{speaker.mostUsedWord}</Text>
+        </Animated.View>
+
+        {/* Word List */}
+        <View style={styles.speakerWordList}>
+          {speaker.topWords.slice(0, 5).map((item, index) => (
+            <Animated.View
+              key={index}
+              style={[
+                styles.speakerWordRow,
+                {
+                  opacity: listAnims[index] || new Animated.Value(1),
+                  transform: [{
+                    translateX: (listAnims[index] || new Animated.Value(1)).interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-30, 0],
+                    }),
+                  }],
+                },
+              ]}
+            >
+              <View style={styles.speakerWordLeft}>
+                <View style={styles.numberCircle}>
+                  <Text style={styles.numberText}>{index + 1}</Text>
+                </View>
+                <Text style={[styles.speakerWordText, { fontSize: SCREEN_WIDTH * 0.065 }]}>{capitalize(item.word)}</Text>
+              </View>
+              <Text style={[styles.speakerWordCount, { fontSize: SCREEN_WIDTH * 0.065 }]}>{item.count}</Text>
+            </Animated.View>
+          ))}
+        </View>
+      </View>
+
+      {/* Bottom Bar */}
+      <View style={styles.bottomBar}>
+        {/* Mute/Unmute Button */}
+        <TouchableOpacity onPress={handleMuteToggle} style={styles.iconButton}>
+          <View style={styles.muteButtonContainer}>
+            <Ionicons 
+              name="volume-high" 
+              size={28} 
+              color="#000" 
+            />
+            {isMuted && (
+              <View style={styles.muteSlash} />
+            )}
+          </View>
+        </TouchableOpacity>
+
+        {/* Choose Speaker Button */}
+        <View>
+          <TouchableOpacity
+            onPress={() => setShowSpeakerMenu(!showSpeakerMenu)}
+            style={styles.chooseSpeakerButton}
+          >
+            <Text style={styles.chooseSpeakerText}>Choose Your Speaker</Text>
+          </TouchableOpacity>
+
+          {/* Speaker Dropdown Menu */}
+          {showSpeakerMenu && (
+            <View style={styles.speakerMenu}>
+              {allSpeakers.map((s, index) => (
+                <TouchableOpacity
+                  key={s.id}
+                  onPress={() => {
+                    onSpeakerChange(index);
+                    setShowSpeakerMenu(false);
+                  }}
+                  style={[
+                    styles.speakerMenuItem,
+                    index === currentSpeakerIndex && styles.speakerMenuItemActive,
+                  ]}
+                >
+                  <Text style={styles.speakerMenuItemText}>{s.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Share Icon */}
+        <TouchableOpacity onPress={handleShare} style={styles.iconButton}>
+          <Ionicons name="share-social" size={28} color="#000" />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -558,8 +930,12 @@ export default function WrappedScreen({ navigation, route }: Props) {
   const [data, setData] = useState<WrappedData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Responsive dimensions - updates automatically on resize!
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
 
-  const totalSlides = 5;
+  // Total slides = 5 base slides + number of speakers
+  const totalSlides = data ? 5 + data.speakers.length : 5;
 
   useEffect(() => {
     const fetchSessionData = async () => {
@@ -567,12 +943,10 @@ export default function WrappedScreen({ navigation, route }: Props) {
         setLoading(true);
         setError(null);
         
-        // Get session status for duration
         const session = await api.sessions.getStatus(sessionId);
         console.log('=== DEBUG: Session Status ===');
         console.log(JSON.stringify(session, null, 2));
         
-        // Get speakers (this has word counts for ALL speakers, even unclaimed)
         const speakersResponse = await api.sessions.getSpeakers(sessionId);
         console.log('=== DEBUG: Speakers Response ===');
         console.log(JSON.stringify(speakersResponse, null, 2));
@@ -580,34 +954,43 @@ export default function WrappedScreen({ navigation, route }: Props) {
         const speakers = speakersResponse.speakers || [];
         const speakerCount = speakers.length;
         
-        console.log(`=== DEBUG: Found ${speakerCount} speakers ===`);
-        
-        // Collect all words from all speakers
         const allWordCounts: { [key: string]: number } = {};
         let totalWords = 0;
         
-        speakers.forEach((speaker: any, idx: number) => {
-          console.log(`=== DEBUG: Speaker ${idx} (${speaker.speaker_label}) ===`);
-          console.log(`  Segment count: ${speaker.segment_count}`);
-          console.log(`  Word counts: ${JSON.stringify(speaker.word_counts)}`);
+        // Process individual speaker data
+        console.log('=== Processing Speakers ===');
+        const speakerDataList: SpeakerData[] = speakers.map((speaker: any, index: number) => {
+          console.log(`Speaker ${index + 1} raw data:`, JSON.stringify(speaker, null, 2));
+          
+          const speakerWordCounts: { [key: string]: number } = {};
           
           speaker.word_counts?.forEach((wc: any) => {
+            speakerWordCounts[wc.word] = (speakerWordCounts[wc.word] || 0) + wc.count;
             allWordCounts[wc.word] = (allWordCounts[wc.word] || 0) + wc.count;
             totalWords += wc.count;
           });
+          
+          const speakerTopWords = Object.entries(speakerWordCounts)
+            .map(([word, count]) => ({ word, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 5);
+          
+          const speakerData = {
+            id: speaker.id || `speaker-${index + 1}`,
+            name: speaker.name || speaker.speaker_label || `Speaker ${index + 1}`,
+            topWords: speakerTopWords,
+            mostUsedWord: speakerTopWords.length > 0 ? speakerTopWords[0].word.toUpperCase() : 'N/A',
+            audioClipUrl: speaker.sample_audio_url,
+          };
+          
+          console.log(`Speaker ${index + 1} processed:`, speakerData);
+          return speakerData;
         });
-        
-        console.log('=== DEBUG: Aggregated Word Counts ===');
-        console.log(JSON.stringify(allWordCounts, null, 2));
-        console.log(`Total words: ${totalWords}`);
         
         const topWords = Object.entries(allWordCounts)
           .map(([word, count]) => ({ word, count }))
           .sort((a, b) => b.count - a.count)
           .slice(0, 5);
-        
-        console.log('=== DEBUG: Top 5 Words ===');
-        console.log(JSON.stringify(topWords, null, 2));
         
         setData({
           speakerCount,
@@ -615,11 +998,11 @@ export default function WrappedScreen({ navigation, route }: Props) {
           topWords,
           mostUsedWord: topWords.length > 0 ? topWords[0].word : 'N/A',
           totalWords,
-          singlishWordsCount: totalWords, // All words in word_counts are singlish words
+          singlishWordsCount: totalWords,
+          speakers: speakerDataList,
         });
       } catch (err: any) {
-        console.error('=== DEBUG: Error fetching session data ===');
-        console.error(err);
+        console.error('Error fetching session data:', err);
         setError(err.message || 'Failed to load session data');
       } finally {
         setLoading(false);
@@ -631,18 +1014,21 @@ export default function WrappedScreen({ navigation, route }: Props) {
   const handleTap = (event: any) => {
     const x = event.nativeEvent.locationX;
     
-    if (x < SCREEN_WIDTH / 3) {
-      // Tap left third - go back
+    if (x < SCREEN_WIDTH / 2) {
+      // Left side - go back
       if (currentSlide > 0) {
         setCurrentSlide(currentSlide - 1);
+      } else {
+        // Loop to last slide
+        setCurrentSlide(totalSlides - 1);
       }
     } else {
-      // Tap right two-thirds - go forward
+      // Right side - go forward
       if (currentSlide < totalSlides - 1) {
         setCurrentSlide(currentSlide + 1);
       } else {
-        // Last slide - close
-        navigation.goBack();
+        // Loop back to start
+        setCurrentSlide(0);
       }
     }
   };
@@ -650,10 +1036,7 @@ export default function WrappedScreen({ navigation, route }: Props) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <LinearGradient
-          colors={['#C45C5C', '#8B3A3A']}
-          style={StyleSheet.absoluteFillObject}
-        />
+        <LinearGradient colors={['#C45C5C', '#8B3A3A']} style={StyleSheet.absoluteFillObject} />
         <ActivityIndicator size="large" color="#fff" />
         <Text style={styles.loadingText}>Loading your Wrapped...</Text>
       </View>
@@ -663,10 +1046,7 @@ export default function WrappedScreen({ navigation, route }: Props) {
   if (error || !data) {
     return (
       <View style={styles.loadingContainer}>
-        <LinearGradient
-          colors={['#1a1a1a', '#000']}
-          style={StyleSheet.absoluteFillObject}
-        />
+        <LinearGradient colors={['#1a1a1a', '#000']} style={StyleSheet.absoluteFillObject} />
         <Ionicons name="alert-circle-outline" size={64} color="#ff6b6b" />
         <Text style={styles.errorTitle}>Oops!</Text>
         <Text style={styles.errorText}>{error || 'No session data available'}</Text>
@@ -679,50 +1059,54 @@ export default function WrappedScreen({ navigation, route }: Props) {
 
   const renderCurrentSlide = () => {
     switch (currentSlide) {
-      case 0:
-        return <SpeakersSlide count={data.speakerCount} isActive={currentSlide === 0} />;
-      case 1:
-        return <DurationSlide seconds={data.duration} isActive={currentSlide === 1} />;
-      case 2:
-        return <TopWordsSlide words={data.topWords} isActive={currentSlide === 2} />;
-      case 3:
-        return <MostUsedWordSlide word={data.mostUsedWord} isActive={currentSlide === 3} />;
-      case 4:
-        return <FinalSlide isActive={currentSlide === 4} />;
-      default:
+      case 0: return <SpeakersSlide count={data.speakerCount} isActive={currentSlide === 0} />;
+      case 1: return <DurationSlide seconds={data.duration} isActive={currentSlide === 1} />;
+      case 2: return <TopWordsSlide words={data.topWords} isActive={currentSlide === 2} />;
+      case 3: return <MostUsedWordSlide word={data.mostUsedWord} isActive={currentSlide === 3} />;
+      case 4: return <FinalSlide isActive={currentSlide === 4} />;
+      default: {
+        // Speaker slides (index 5 onwards)
+        const speakerIndex = currentSlide - 5;
+        if (speakerIndex >= 0 && speakerIndex < data.speakers.length) {
+          return (
+            <SpeakerWrappedSlide
+              speaker={data.speakers[speakerIndex]}
+              allSpeakers={data.speakers}
+              currentSpeakerIndex={speakerIndex}
+              onSpeakerChange={(newIndex) => setCurrentSlide(5 + newIndex)}
+              isActive={true}
+            />
+          );
+        }
         return null;
+      }
     }
   };
 
   return (
-    <TouchableWithoutFeedback onPress={handleTap}>
-      <View style={styles.container}>
-        {/* Progress bars */}
-        <View style={styles.progressContainer}>
-          {Array.from({ length: totalSlides }).map((_, index) => (
-            <View
-              key={index}
-              style={[
-                styles.progressBar,
-                index <= currentSlide && styles.progressBarActive,
-              ]}
-            />
-          ))}
+    <DimensionsContext.Provider value={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}>
+      <TouchableWithoutFeedback onPress={handleTap}>
+        <View style={[styles.container, { width: SCREEN_WIDTH, height: SCREEN_HEIGHT }]}>
+          {/* Progress bars */}
+          <View style={styles.progressContainer}>
+            {Array.from({ length: totalSlides }).map((_, index) => (
+              <View key={index} style={[styles.progressBar, index <= currentSlide && styles.progressBarActive]} />
+            ))}
+          </View>
+
+          {/* Close button */}
+          <TouchableOpacity 
+            style={styles.closeButton} 
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
+
+          {renderCurrentSlide()}
         </View>
-
-        {/* Close button */}
-        <TouchableOpacity 
-          style={styles.closeButton} 
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="close" size={28} color="#fff" />
-        </TouchableOpacity>
-
-        {/* Current Slide */}
-        {renderCurrentSlide()}
-      </View>
-    </TouchableWithoutFeedback>
+      </TouchableWithoutFeedback>
+    </DimensionsContext.Provider>
   );
 }
 
@@ -769,7 +1153,7 @@ const styles = StyleSheet.create({
   },
   progressContainer: {
     position: 'absolute',
-    top: 60,
+    top: 50,
     left: 16,
     right: 16,
     flexDirection: 'row',
@@ -787,7 +1171,7 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: 'absolute',
-    top: 55,
+    top: 44,
     right: 16,
     zIndex: 100,
     width: 44,
@@ -797,8 +1181,8 @@ const styles = StyleSheet.create({
   },
   slide: {
     flex: 1,
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
+    width: '100%',
+    height: '100%',
     overflow: 'hidden',
   },
   centeredContent: {
@@ -807,88 +1191,89 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 32,
     zIndex: 10,
+    maxWidth: 500,
+    alignSelf: 'center',
+    width: '100%',
+  },
+
+  // Angular shapes for slide 1
+  angularShape: {
+    position: 'absolute',
   },
 
   // Speakers Slide
   speakersText: {
-    fontSize: 48,
+    fontSize: 46, // Overridden by inline style
     fontWeight: '900',
     color: '#000',
     textAlign: 'center',
-    lineHeight: 58,
+    lineHeight: 56, // Overridden by inline style
   },
   boldBlack: {
     fontWeight: '900',
     color: '#000',
   },
-  shapeContainer: {
-    position: 'absolute',
-  },
-  topRightShape: {
-    top: -30,
-    right: -30,
-  },
-  bottomLeftShape: {
-    bottom: -30,
-    left: -30,
-  },
-  steppedShape: {
-    position: 'absolute',
-  },
 
   // Duration Slide
-  arcContainer: {
-    position: 'absolute',
-    top: -150,
-    left: -150,
-  },
   arc: {
     position: 'absolute',
-    borderBottomRightRadius: 500,
   },
   durationTitle: {
-    fontSize: 36,
+    fontSize: 36, // Overridden by inline style
     fontWeight: '900',
     color: '#000',
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   durationNumber: {
-    fontSize: 140,
+    fontSize: 128, // Overridden by inline style
     fontWeight: '900',
     color: '#000',
     textAlign: 'center',
-    lineHeight: 150,
+    lineHeight: 140, // Overridden by inline style
   },
   durationUnit: {
-    fontSize: 40,
+    fontSize: 40, // Overridden by inline style
     fontWeight: '900',
     color: '#000',
     textAlign: 'center',
   },
   durationSubtitle: {
-    fontSize: 22,
+    fontSize: 22, // Overridden by inline style
     fontWeight: '700',
     color: 'rgba(0,0,0,0.7)',
     textAlign: 'center',
-    marginTop: 30,
+    marginTop: 24,
   },
 
   // Top Words Slide
-  diagonalShape: {
+  diagonalContainer: {
     position: 'absolute',
     top: 0,
     right: 0,
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT / 3,
+    width: '100%',
+    height: '35%',
+    overflow: 'hidden',
+  },
+  diagonalShape: {
+    width: '150%',
+    height: '100%',
     backgroundColor: 'rgba(96, 165, 250, 0.3)',
-    transform: [{ skewY: '-10deg' }, { translateY: -100 }],
+    transform: [{ rotate: '-15deg' }, { translateX: -50 }, { translateY: -100 }],
+  },
+  topWordsContent: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+    paddingTop: 60,
+    zIndex: 10,
   },
   topWordsTitle: {
-    fontSize: 36,
+    fontSize: 38, // Overridden by inline style
     fontWeight: '900',
+    fontStyle: 'italic',
     color: '#fff',
-    marginBottom: 40,
+    marginBottom: 32,
   },
   wordsList: {
     width: '100%',
@@ -896,26 +1281,21 @@ const styles = StyleSheet.create({
   wordRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   wordRank: {
-    fontSize: 60,
+    fontSize: 60, // Overridden by inline style
     fontWeight: '900',
     color: '#fff',
-    width: 80,
+    width: 88, // Overridden by inline style
   },
   wordText: {
-    fontSize: 44,
+    fontSize: 44, // Overridden by inline style
     fontWeight: '700',
     color: '#fff',
   },
 
   // Most Used Word Slide
-  triangleContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-  },
   triangle: {
     position: 'absolute',
     width: 0,
@@ -925,16 +1305,16 @@ const styles = StyleSheet.create({
     borderRightColor: 'transparent',
   },
   mostUsedTitle: {
-    fontSize: 28,
+    fontSize: 26, // Overridden by inline style
     fontWeight: '900',
+    fontStyle: 'italic',
     color: '#fff',
     textAlign: 'center',
-    marginBottom: 50,
-    lineHeight: 38,
-    maxWidth: 320,
+    marginBottom: 40,
+    lineHeight: 36, // Overridden by inline style
   },
   mostUsedWord: {
-    fontSize: 120,
+    fontSize: 112, // Overridden by inline style
     fontWeight: '900',
     color: '#fff',
     textAlign: 'center',
@@ -943,23 +1323,182 @@ const styles = StyleSheet.create({
   // Final Slide
   finalSquare: {
     position: 'absolute',
+    overflow: 'hidden',
   },
   finalYour: {
-    fontSize: 60,
+    fontSize: 60, // Overridden by inline style
     fontWeight: '900',
     color: '#fff',
     textAlign: 'center',
   },
   finalYapSession: {
-    fontSize: 70,
+    fontSize: 64, // Overridden by inline style
     fontWeight: '900',
     color: '#fff',
     textAlign: 'center',
   },
   finalWrapped: {
-    fontSize: 52,
+    fontSize: 52, // Overridden by inline style
     fontWeight: '300',
     color: '#fff',
     textAlign: 'center',
+  },
+
+  // Speaker Wrapped Slide
+  cornerDecoration: {
+    position: 'absolute',
+    zIndex: 1,
+  },
+  zigzagCorner: {
+    position: 'relative',
+  },
+  zigzagStep: {
+    position: 'absolute',
+  },
+  speakerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    paddingTop: 80,
+    maxWidth: 500,
+    alignSelf: 'center',
+    width: '100%',
+    zIndex: 10,
+  },
+  speakerTitle: {
+    fontSize: 26, // Overridden by inline style
+    fontWeight: '700',
+    color: '#000',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  mostUsedWordContainer: {
+    marginBottom: 32,
+  },
+  speakerMostUsedWord: {
+    fontSize: 80, // Overridden by inline style
+    fontWeight: '900',
+    color: '#FF5A5F',
+    textAlign: 'center',
+    textShadowColor: '#D44548',
+    textShadowOffset: { width: 4, height: 4 },
+    textShadowRadius: 0,
+  },
+  speakerWordList: {
+    width: '100%',
+    maxWidth: 320,
+  },
+  speakerWordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  speakerWordLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  numberCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 3,
+    borderColor: '#FF5A5F',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  numberText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FF5A5F',
+  },
+  speakerWordText: {
+    fontSize: 26, // Overridden by inline style
+    fontWeight: '700',
+    color: '#000',
+  },
+  speakerWordCount: {
+    fontSize: 26, // Overridden by inline style
+    fontWeight: '700',
+    color: '#000',
+  },
+  bottomBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+    paddingTop: 16,
+    zIndex: 20,
+  },
+  iconButton: {
+    padding: 12,
+    borderRadius: 24,
+  },
+  muteButtonContainer: {
+    position: 'relative',
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  muteSlash: {
+    position: 'absolute',
+    width: 36,
+    height: 4,
+    backgroundColor: '#FF0000',
+    borderRadius: 2,
+    transform: [{ rotate: '-45deg' }],
+  },
+  chooseSpeakerButton: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#000',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  chooseSpeakerText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#000',
+    fontStyle: 'italic',
+  },
+  speakerMenu: {
+    position: 'absolute',
+    bottom: '100%',
+    left: '50%',
+    transform: [{ translateX: -75 }],
+    marginBottom: 8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#000',
+    overflow: 'hidden',
+    minWidth: 150,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  speakerMenuItem: {
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  speakerMenuItemActive: {
+    backgroundColor: '#FFE500',
+  },
+  speakerMenuItemText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
   },
 });

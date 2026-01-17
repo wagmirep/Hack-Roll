@@ -145,7 +145,7 @@ async def process_session(session_id: uuid.UUID) -> Dict:
         # Stage 4: Save results to database
         update_progress(db, session, "saving_results", 0)
         speaker_records = save_speaker_results(
-            db, session_id, speaker_results
+            db, session_id, speaker_results, segments
         )
         update_progress(db, session, "saving_results", 100)
 
@@ -178,7 +178,7 @@ async def process_session(session_id: uuid.UUID) -> Dict:
         )
 
         return {
-            "speakers": len(speaker_results),
+            "speakers": len(speaker_records),  # Use speaker_records which includes all detected speakers
             "segments": len(segments),
             "total_words": total_words,
             "speaker_word_counts": {
@@ -464,7 +464,8 @@ async def transcribe_and_count(
 def save_speaker_results(
     db: DBSession,
     session_id: uuid.UUID,
-    speaker_results: Dict[str, Dict[str, int]]
+    speaker_results: Dict[str, Dict[str, int]],
+    segments: List[SpeakerSegment] = None
 ) -> Dict[str, SessionSpeaker]:
     """
     Save speaker and word count results to database.
@@ -473,19 +474,35 @@ def save_speaker_results(
         db: Database session
         session_id: Session UUID
         speaker_results: Dict mapping speaker_id -> {word: count}
+        segments: List of speaker segments from diarization (to ensure all speakers are created)
 
     Returns:
         Dict mapping speaker_id -> SessionSpeaker record
     """
     speaker_records = {}
 
-    for speaker_id, word_counts in speaker_results.items():
+    # Get all unique speakers from diarization segments
+    all_speaker_ids = set(speaker_results.keys())
+    if segments:
+        for segment in segments:
+            all_speaker_ids.add(segment.speaker_id)
+    
+    logger.info(f"Creating speaker records for {len(all_speaker_ids)} speakers: {all_speaker_ids}")
+
+    for speaker_id in all_speaker_ids:
+        word_counts = speaker_results.get(speaker_id, {})
+        
+        # Count segments for this speaker
+        segment_count = 0
+        if segments:
+            segment_count = sum(1 for s in segments if s.speaker_id == speaker_id)
+        
         # Create SessionSpeaker record
         speaker = SessionSpeaker(
             id=uuid.uuid4(),
             session_id=session_id,
             speaker_label=speaker_id,
-            segment_count=sum(word_counts.values()),  # Approximate
+            segment_count=segment_count if segment_count > 0 else sum(word_counts.values()),
         )
         db.add(speaker)
         db.flush()  # Get the ID
