@@ -10,26 +10,51 @@
 # REFERENCES:
 #     - PEFT library documentation
 #     - MERaLiON model architecture
+#     - .planning/phases/lora-finetuning/RESEARCH.md
 
 # =============================================================================
 # LORA ARCHITECTURE
 # =============================================================================
-# lora:
-#   r: 16                      # Rank - lower = smaller adapter, higher = more capacity
-#   lora_alpha: 32             # Scaling factor (usually 2x rank)
-#   target_modules:            # Which layers to adapt
-#     - q_proj                 # Query projection
-#     - v_proj                 # Value projection
-#     # - k_proj               # Key projection (optional, increases size)
-#     # - o_proj               # Output projection (optional)
-#   lora_dropout: 0.1          # Dropout for regularization
-#   bias: none                 # Bias training: none, all, or lora_only
-#   task_type: CAUSAL_LM       # Task type for PEFT
+lora:
+  # Rank - controls adapter capacity
+  # Lower rank = smaller adapter, less capacity but less overfitting risk
+  # Higher rank = more capacity but risk overfitting on small datasets
+  # Recommended: 16-32 for ~1000 samples
+  r: 32
+
+  # Scaling factor - affects learning dynamics
+  # Standard practice: 2x rank
+  lora_alpha: 64
+
+  # Which layers to adapt
+  # Minimum effective set for ASR: q_proj, v_proj
+  # For more capacity: add k_proj, o_proj, fc1, fc2
+  target_modules:
+    - q_proj
+    - v_proj
+
+  # Dropout for regularization
+  # 0.05-0.1 recommended for small datasets
+  lora_dropout: 0.05
+
+  # Bias training: "none", "all", or "lora_only"
+  # "none" is more stable and recommended
+  bias: none
+
+  # Task type for PEFT
+  # SEQ_2_SEQ_LM for encoder-decoder ASR models like Whisper/MERaLiON
+  task_type: SEQ_2_SEQ_LM
 
 # =============================================================================
 # NOTES
 # =============================================================================
-# - Rank 16 is a good balance for hackathon (not too large, decent capacity)
-# - Target q_proj and v_proj is standard for transformer fine-tuning
-# - Increasing rank beyond 32 has diminishing returns
-# - lora_alpha / r ratio affects learning dynamics (2x is standard)
+# Expected trainable parameters: ~1% of model
+# Checkpoint size: ~50-100MB for LoRA adapter
+#
+# For larger datasets (5000+ samples), consider:
+#   - Increasing r to 64
+#   - Adding more target_modules: [q_proj, k_proj, v_proj, o_proj]
+#
+# For smaller datasets (<500 samples), consider:
+#   - Decreasing r to 16
+#   - Increasing lora_dropout to 0.1

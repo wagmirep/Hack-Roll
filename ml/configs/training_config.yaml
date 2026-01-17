@@ -1,7 +1,7 @@
 # training_config.yaml - Training Configuration
 #
 # PURPOSE:
-#     Define training hyperparameters and settings.
+#     Define training hyperparameters and settings for LoRA fine-tuning.
 #     Controls training loop behavior.
 #
 # REFERENCED BY:
@@ -10,55 +10,125 @@
 # REFERENCES:
 #     - ml/configs/lora_config.yaml - LoRA settings
 #     - ml/data/splits/ - Data paths
+#     - .planning/phases/lora-finetuning/RESEARCH.md
 
 # =============================================================================
 # MODEL
 # =============================================================================
-# model:
-#   base_model: "MERaLiON/MERaLiON-2-10B-ASR"
-#   load_in_8bit: false        # 8-bit quantization (saves memory)
-#   load_in_4bit: false        # 4-bit quantization (saves more memory)
+model:
+  # Base model to fine-tune
+  base_model: MERaLiON/MERaLiON-2-10B-ASR
+
+  # 8-bit quantization - enables training on 16GB GPU
+  # Required for large models on consumer hardware
+  load_in_8bit: true
+
+  # 4-bit quantization - even more memory efficient but slightly lower quality
+  load_in_4bit: false
+
+  # Device mapping for multi-GPU or CPU offloading
+  device_map: auto
 
 # =============================================================================
 # DATA
 # =============================================================================
-# data:
-#   train_path: "ml/data/splits/train.json"
-#   val_path: "ml/data/splits/val.json"
-#   test_path: "ml/data/splits/test.json"
-#   max_audio_length: 30       # seconds
-#   sample_rate: 16000         # Hz
+data:
+  # Paths to dataset splits (relative to project root)
+  train_path: ml/data/splits/train.json
+  val_path: ml/data/splits/val.json
+  test_path: ml/data/splits/test.json
+
+  # Audio settings
+  max_audio_length: 30  # seconds - samples longer than this are truncated
+  sample_rate: 16000    # Hz - must match model expectations
+
+  # Preprocessing
+  num_workers: 4        # Workers for data loading
 
 # =============================================================================
 # TRAINING
 # =============================================================================
-# training:
-#   epochs: 3
-#   batch_size: 4              # Reduce if OOM
-#   gradient_accumulation_steps: 4
-#   learning_rate: 1e-4
-#   warmup_steps: 100
-#   weight_decay: 0.01
-#   max_grad_norm: 1.0
-#   fp16: true                 # Use mixed precision
-#   bf16: false                # Use bfloat16 (if supported)
+training:
+  # Number of epochs
+  # 3-5 recommended for small datasets to avoid overfitting
+  epochs: 3
+
+  # Batch size per device
+  # Reduce if OOM errors occur
+  batch_size: 4
+
+  # Gradient accumulation
+  # Effective batch size = batch_size * gradient_accumulation_steps
+  # Effective batch = 4 * 4 = 16
+  gradient_accumulation_steps: 4
+
+  # Learning rate
+  # LoRA uses higher LR than full fine-tuning (1e-4 vs 1e-5)
+  learning_rate: 1.0e-4
+
+  # Warmup
+  # ~10% of total steps or 50-100 steps
+  warmup_steps: 50
+
+  # Regularization
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+
+  # Mixed precision
+  # fp16 for most GPUs, bf16 for A100/H100
+  fp16: true
+  bf16: false
+
+  # Memory optimization
+  # Trades compute for memory - enables larger batch sizes
+  gradient_checkpointing: true
 
 # =============================================================================
 # CHECKPOINTING
 # =============================================================================
-# checkpointing:
-#   output_dir: "ml/checkpoints"
-#   save_steps: 500
-#   save_total_limit: 3        # Keep last N checkpoints
-#   evaluation_strategy: "steps"
-#   eval_steps: 500
-#   load_best_model_at_end: true
-#   metric_for_best_model: "eval_loss"
+checkpointing:
+  # Output directory for checkpoints
+  output_dir: ml/checkpoints
+
+  # Save frequency
+  save_steps: 500
+
+  # Keep last N checkpoints to save disk space
+  save_total_limit: 3
+
+  # Evaluation strategy: "steps" or "epoch"
+  evaluation_strategy: steps
+  eval_steps: 100
+
+  # Load best model after training
+  load_best_model_at_end: true
+
+  # Metric for best model selection
+  # "wer" for Word Error Rate (lower is better)
+  metric_for_best_model: wer
+  greater_is_better: false
+
+  # Generation settings for evaluation
+  predict_with_generate: true
+  generation_max_length: 225
 
 # =============================================================================
 # LOGGING
 # =============================================================================
-# logging:
-#   logging_steps: 50
-#   report_to: "tensorboard"   # or "wandb"
-#   run_name: "lahstats-lora-v1"
+logging:
+  # Log every N steps
+  logging_steps: 25
+
+  # Logging backend: "tensorboard" or "wandb"
+  report_to: tensorboard
+
+  # Run name for tracking
+  run_name: lahstats-singlish-lora-v1
+
+  # Logging directory
+  logging_dir: ml/outputs/logs
+
+# =============================================================================
+# SEED
+# =============================================================================
+seed: 42  # For reproducibility
