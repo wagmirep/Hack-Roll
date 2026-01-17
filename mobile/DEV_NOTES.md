@@ -1,5 +1,30 @@
 # Mobile App Development Notes
 
+## 🚨 URGENT: NEW FEATURE TO IMPLEMENT
+
+### Three-Way Speaker Claiming System
+
+**Priority:** HIGH  
+**Status:** 🔴 Backend Complete - Frontend Implementation Required  
+**Added:** January 17, 2026
+
+The backend now supports **three claiming modes** instead of just self-claiming:
+1. **Claim as yourself**
+2. **Tag another registered user** 
+3. **Tag as guest participant**
+
+**📝 Implementation Guide:** See `TODO_THREE_WAY_CLAIMING.md` in this directory
+
+**Files to update:**
+- `src/types/session.ts` - Add new fields
+- `src/api/client.ts` - Add user search endpoint
+- `src/screens/ClaimingScreen.tsx` - Add 3-mode UI
+- `src/screens/ResultsScreen.tsx` - Display guests
+
+**Estimated Time:** 1-1.5 hours
+
+---
+
 ## ✅ Setup Complete!
 
 The Expo development server is now running on your machine.

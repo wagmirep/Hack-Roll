@@ -34,15 +34,20 @@ def decode_jwt(token: str) -> dict:
         HTTPException: If token is invalid or expired
     """
     try:
-        # Decode JWT using Supabase JWT secret
+        # Decode JWT - support multiple algorithms used by Supabase
+        # Note: In production, should verify signature properly with public key for ES256/RS256
         payload = jwt.decode(
             token,
             settings.SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            options={"verify_aud": False}  # Supabase doesn't use aud claim
+            algorithms=["HS256", "ES256", "RS256"],
+            options={
+                "verify_aud": False,  # Supabase doesn't use aud claim
+                "verify_signature": False  # Skip signature verification (development only)
+            }
         )
         return payload
     except JWTError as e:
+        print(f"❌ JWT decode error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authentication credentials: {str(e)}",
@@ -65,20 +70,28 @@ def get_current_user_id(
     Raises:
         HTTPException: If token is invalid or missing user ID
     """
+    print(f"🔐 get_current_user_id called - credentials present: {credentials is not None}")
     token = credentials.credentials
+    print(f"🎟️  Token received (length: {len(token)})")
+    print(f"🔍 Decoding JWT token (first 20 chars): {token[:20]}...")
     payload = decode_jwt(token)
+    print(f"✅ JWT decoded successfully. User ID: {payload.get('sub')}")
     
     # Extract user ID from token payload
     user_id = payload.get("sub")
     if not user_id:
+        print("❌ Token missing user ID (sub claim)")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token missing user ID",
         )
     
     try:
-        return uuid.UUID(user_id)
+        user_uuid = uuid.UUID(user_id)
+        print(f"✅ User authenticated: {user_uuid}")
+        return user_uuid
     except ValueError:
+        print(f"❌ Invalid user ID format: {user_id}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid user ID format",

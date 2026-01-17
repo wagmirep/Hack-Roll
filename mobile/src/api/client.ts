@@ -3,9 +3,17 @@ import { supabase } from '../lib/supabase';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
+// Cache for the current session to avoid multiple concurrent getSession calls
+let sessionCache: { token: string | null, expiresAt: number } = { token: null, expiresAt: 0 };
+
+// Function to clear the session cache (call on sign out)
+export const clearSessionCache = () => {
+  sessionCache = { token: null, expiresAt: 0 };
+};
+
 export const axiosInstance: AxiosInstance = axios.create({
   baseURL: API_URL,
-  timeout: 10000, // Reduced from 30s to 10s for faster feedback
+  timeout: 5000, // Reduced to 5 seconds for faster feedback
   headers: {
     'Content-Type': 'application/json',
   },
@@ -14,15 +22,60 @@ export const axiosInstance: AxiosInstance = axios.create({
 // Request interceptor: Add JWT token to all requests
 axiosInstance.interceptors.request.use(
   async (config) => {
-    const { data: { session } } = await supabase.auth.getSession();
+    try {
+      // Check if we have a valid cached token
+      const now = Date.now();
+      if (sessionCache.token && sessionCache.expiresAt > now) {
+        config.headers.Authorization = `Bearer ${sessionCache.token}`;
+        return config;
+      }
 
-    if (session?.access_token) {
-      config.headers.Authorization = `Bearer ${session.access_token}`;
+      // Fetch new session if cache is invalid
+      console.log('Fetching new session token...');
+      
+      // Add timeout to getSession call to prevent hanging
+      const sessionPromise = supabase.auth.getSession();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('getSession timeout')), 3000)
+      );
+      
+      const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]) as any;
+
+      if (session?.access_token) {
+        // Cache the token with a 5-minute expiry buffer
+        sessionCache = {
+          token: session.access_token,
+          expiresAt: (session.expires_at || 0) * 1000 - 5 * 60 * 1000
+        };
+        config.headers.Authorization = `Bearer ${session.access_token}`;
+        console.log('Token added to request');
+      } else {
+        console.warn('No session token available - signing out');
+        // No valid session - sign out and let auth flow handle redirect
+        await supabase.auth.signOut();
+        throw new Error('No valid session - please log in again');
+      }
+    } catch (error: any) {
+      console.error('Error getting session in interceptor:', error);
+      
+      // Determine if this is a timeout error
+      const isTimeout = error?.message?.includes('timeout');
+      if (isTimeout) {
+        console.error('SESSION TIMEOUT - Signing out user and redirecting to login');
+      }
+      
+      // If we can't get a session, sign out to prevent broken state
+      clearSessionCache();
+      await supabase.auth.signOut();
+      throw error; // Reject the request so it doesn't proceed without auth
     }
 
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    console.error('Request interceptor error:', error);
+    return Promise.reject(error);
+  }
 );
 
 // Response interceptor: Handle 401 errors and token refresh
@@ -30,16 +83,50 @@ axiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
-      // Token expired, try to refresh
-      const { data: { session } } = await supabase.auth.refreshSession();
+      console.warn('Received 401 Unauthorized - attempting token refresh...');
+      
+      try {
+        // Clear cached token on 401
+        clearSessionCache();
+        
+        // Token expired, try to refresh ONCE
+        const originalRequest = error.config;
+        
+        // Prevent infinite retry loop
+        if (originalRequest._retry) {
+          console.error('Token refresh already attempted - signing out');
+          await supabase.auth.signOut();
+          return Promise.reject(error);
+        }
+        
+        originalRequest._retry = true;
+        
+        // Try to refresh the session
+        const { data: { session }, error: refreshError } = await supabase.auth.refreshSession();
 
-      if (session) {
-        // Retry original request with new token
-        error.config.headers.Authorization = `Bearer ${session.access_token}`;
-        return axiosInstance.request(error.config);
-      } else {
-        // Refresh failed, sign out
+        if (session?.access_token) {
+          console.log('Token refreshed successfully - retrying request');
+          // Update cache with new token
+          sessionCache = {
+            token: session.access_token,
+            expiresAt: (session.expires_at || 0) * 1000 - 5 * 60 * 1000
+          };
+          
+          // Retry original request with new token
+          originalRequest.headers.Authorization = `Bearer ${session.access_token}`;
+          return axiosInstance.request(originalRequest);
+        } else {
+          // Refresh failed - session is truly invalid
+          console.error('Session refresh failed:', refreshError?.message || 'No session returned');
+          console.log('Signing out user - please log in again');
+          await supabase.auth.signOut();
+          return Promise.reject(new Error('Session expired - please log in again'));
+        }
+      } catch (refreshError) {
+        console.error('Error refreshing session:', refreshError);
+        // Refresh failed - sign out to prevent broken state
         await supabase.auth.signOut();
+        return Promise.reject(error);
       }
     }
 
@@ -80,6 +167,12 @@ export const api = {
   },
 
   sessions: {
+    list: async (groupId?: string, status?: string, limit?: number, offset?: number) => {
+      const { data } = await axiosInstance.get('/sessions', {
+        params: { group_id: groupId, status, limit, offset },
+      });
+      return data;
+    },
     create: async (groupId: string) => {
       const { data } = await axiosInstance.post('/sessions', { group_id: groupId });
       return data;
@@ -119,6 +212,16 @@ export const api = {
       const { data } = await axiosInstance.get(`/sessions/${sessionId}/results`);
       return data;
     },
+    getMyStats: async (sessionId: string) => {
+      const { data } = await axiosInstance.get(`/sessions/${sessionId}/my-stats`);
+      return data;
+    },
+    compare: async (sessionIds: string[]) => {
+      const { data } = await axiosInstance.get('/sessions/compare', {
+        params: { session_ids: sessionIds },
+      });
+      return data;
+    },
   },
 
   stats: {
@@ -136,6 +239,18 @@ export const api = {
     },
     getWrapped: async () => {
       const { data } = await axiosInstance.get('/users/me/wrapped');
+      return data;
+    },
+    getTrends: async (granularity: string = 'day', limit: number = 30, groupId?: string) => {
+      const { data } = await axiosInstance.get('/users/me/trends', {
+        params: { granularity, limit, group_id: groupId },
+      });
+      return data;
+    },
+    getGlobalLeaderboard: async (period: string = 'all_time') => {
+      const { data } = await axiosInstance.get('/users/global/leaderboard', {
+        params: { period },
+      });
       return data;
     },
   },

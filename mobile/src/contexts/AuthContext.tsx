@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { Profile, Group, AuthContextType } from '../types/auth';
-import { api } from '../api/client';
+import { api, clearSessionCache } from '../api/client';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -14,45 +14,96 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Safety timeout: ensure loading never stays true forever
-    const safetyTimeout = setTimeout(() => {
-      console.warn('Loading timeout reached - forcing loading state to false');
-      setLoading(false);
-    }, 15000); // 15 second max loading time
+    let isMounted = true;
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('Initial session check:', session?.user?.id ? 'Session found' : 'No session');
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session) {
-        fetchProfile();
-      } else {
-        setLoading(false);
+    // Get initial session with error handling
+    const initSession = async () => {
+      try {
+        console.log('Attempting to restore session from storage...');
+        
+        // Add timeout to getSession to prevent hanging on page refresh
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('getSession timeout during init')), 3000)
+        );
+        
+        const { data: { session }, error } = await Promise.race([
+          sessionPromise, 
+          timeoutPromise
+        ]) as any;
+        
+        if (!isMounted) return;
+        
+        if (error) {
+          console.error('Error getting initial session:', error);
+          setLoading(false);
+          return;
+        }
+        
+        console.log('Initial session check:', session?.user?.id ? 'Session found' : 'No session');
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (session) {
+          await fetchProfile();
+        } else {
+          // No session - show login screen immediately
+          setLoading(false);
+        }
+      } catch (error: any) {
+        console.error('Error getting initial session:', error);
+        
+        // If getSession timed out, clear storage and show login
+        if (error?.message?.includes('timeout')) {
+          console.error('getSession timed out during init - clearing ALL state and showing login');
+          clearSessionCache();
+          // Clear session state immediately so AppNavigator shows login
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setGroups([]);
+          // Don't await signOut - it might hang too. Fire and forget.
+          supabase.auth.signOut({ scope: 'local' }).catch(e => 
+            console.error('signOut also failed:', e)
+          );
+        }
+        
+        // ALWAYS set loading to false so login screen shows
+        if (isMounted) {
+          console.log('Setting loading=false after init error');
+          setLoading(false);
+          console.log('setLoading(false) called - should show login screen now');
+        } else {
+          console.warn('Component unmounted - not setting loading state');
+        }
       }
-    }).catch((error) => {
-      console.error('Error getting initial session:', error);
-      setLoading(false);
-    });
+    };
+
+    initSession();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
+        if (!isMounted) return;
+        
         console.log('Auth state changed:', _event, session?.user?.id);
         setSession(session);
         setUser(session?.user ?? null);
+        
         if (session) {
           await fetchProfile();
         } else {
+          console.log('No session - clearing state and setting loading=false');
           setProfile(null);
           setGroups([]);
           setLoading(false);
+          console.log('Loading set to false, should show login screen now');
         }
       }
     );
 
     return () => {
-      clearTimeout(safetyTimeout);
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -64,14 +115,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('Profile fetched successfully:', data.profile?.username);
       setProfile(data.profile);
       setGroups(data.groups || []);
-    } catch (error) {
+      setLoading(false);
+    } catch (error: any) {
       console.error('Error fetching profile:', error);
-      // If profile fetch fails, still allow user to use the app
-      // They have a valid session, just can't reach the backend right now
+      
+      // Check if error is related to session/authentication
+      const errorMessage = error?.message || '';
+      const isSessionError = errorMessage.includes('session') || 
+                            errorMessage.includes('timeout') || 
+                            errorMessage.includes('getSession') ||
+                            error?.response?.status === 401;
+      
+      if (isSessionError) {
+        console.error('Session error detected during profile fetch - forcing loading=false');
+        // Clear everything and set loading=false to ensure login screen shows
+        clearSessionCache();
+        setProfile(null);
+        setGroups([]);
+        setSession(null);
+        setUser(null);
+        setLoading(false);
+        console.log('Cleared all auth state and set loading=false');
+        return;
+      }
+      
+      // Other errors (network issues, etc) - allow user to continue
       console.warn('Continuing without profile data - backend may be unreachable');
       setProfile(null);
       setGroups([]);
-    } finally {
       setLoading(false);
     }
   };
@@ -96,6 +167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    clearSessionCache();
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
   };

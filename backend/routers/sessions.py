@@ -6,9 +6,9 @@ PURPOSE:
     Handles session lifecycle from start to claiming completion.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, desc
 from database import get_db
 from auth import get_current_user
 from models import (
@@ -19,14 +19,97 @@ from schemas import (
     SessionCreateRequest, SessionResponse, SessionEndRequest,
     ChunkUploadResponse, SpeakersListResponse, SpeakerResponse,
     ClaimSpeakerRequest, ClaimSpeakerResponse, SessionResultsResponse,
-    UserResultResponse, UserWordCountResponse, SpeakerWordCountResponse
+    UserResultResponse, UserWordCountResponse, SpeakerWordCountResponse,
+    SessionHistoryResponse, UserSessionStatsResponse, SessionComparisonResponse
 )
 from storage import storage
 import uuid
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
+
+
+@router.get("", response_model=List[SessionHistoryResponse])
+async def list_sessions(
+    group_id: Optional[uuid.UUID] = Query(None, description="Filter by group"),
+    status: Optional[str] = Query(None, regex="^(recording|processing|ready_for_claiming|completed|failed)$"),
+    limit: int = Query(20, ge=1, le=100, description="Number of sessions to return"),
+    offset: int = Query(0, ge=0, description="Number of sessions to skip"),
+    current_user: Profile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get session history with filters and pagination.
+    Shows sessions the user has access to (their groups).
+    
+    Args:
+        group_id: Optional filter by specific group
+        status: Optional filter by session status
+        limit: Max number of results (default 20, max 100)
+        offset: Pagination offset
+        
+    Returns:
+        List of sessions with summary stats
+    """
+    # Build base query - only sessions from groups user is in
+    query = db.query(SessionModel).join(
+        GroupMember,
+        GroupMember.group_id == SessionModel.group_id
+    ).filter(
+        GroupMember.user_id == current_user.id
+    )
+    
+    # Apply filters
+    if group_id:
+        query = query.filter(SessionModel.group_id == group_id)
+    
+    if status:
+        query = query.filter(SessionModel.status == status)
+    
+    # Order by most recent first
+    query = query.order_by(desc(SessionModel.started_at))
+    
+    # Apply pagination
+    sessions = query.offset(offset).limit(limit).all()
+    
+    # Build response with stats
+    result = []
+    for session in sessions:
+        # Get starter name
+        starter = db.query(Profile).filter(Profile.id == session.started_by).first()
+        
+        # Count total speakers
+        total_speakers = db.query(SessionSpeaker).filter(
+            SessionSpeaker.session_id == session.id
+        ).count()
+        
+        # Get my word count for this session
+        my_words = db.query(func.sum(WordCount.count)).filter(
+            WordCount.session_id == session.id,
+            WordCount.user_id == current_user.id
+        ).scalar() or 0
+        
+        # Get group total for this session
+        group_words = db.query(func.sum(WordCount.count)).filter(
+            WordCount.session_id == session.id
+        ).scalar() or 0
+        
+        result.append(SessionHistoryResponse(
+            id=session.id,
+            group_id=session.group_id,
+            started_by=session.started_by,
+            started_by_name=starter.display_name or starter.username if starter else "Unknown",
+            status=session.status,
+            started_at=session.started_at,
+            ended_at=session.ended_at,
+            duration_seconds=session.duration_seconds,
+            total_speakers=total_speakers,
+            my_total_words=my_words,
+            group_total_words=group_words
+        ))
+    
+    return result
 
 
 @router.post("", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
@@ -581,4 +664,166 @@ async def get_session_results(
         status=session.status,
         users=users,
         all_claimed=all_claimed
+    )
+
+
+@router.get("/{session_id}/my-stats", response_model=UserSessionStatsResponse)
+async def get_my_session_stats(
+    session_id: uuid.UUID,
+    current_user: Profile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get my personal stats for a specific session.
+    Shows what I said in a particular recording session.
+    
+    Args:
+        session_id: Session ID
+        
+    Returns:
+        User's word counts for that session
+    """
+    # Get session
+    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+    
+    # Verify user is in the group
+    member = db.query(GroupMember).filter(
+        GroupMember.group_id == session.group_id,
+        GroupMember.user_id == current_user.id
+    ).first()
+    
+    if not member:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized"
+        )
+    
+    # Get target words for emoji mapping
+    target_words = {tw.word: tw.emoji for tw in db.query(TargetWord).all()}
+    
+    # Get my word counts for this session
+    word_counts = db.query(WordCount).filter(
+        WordCount.session_id == session_id,
+        WordCount.user_id == current_user.id
+    ).all()
+    
+    # Build word count list
+    word_count_list = [
+        UserWordCountResponse(
+            word=wc.word,
+            count=wc.count,
+            emoji=target_words.get(wc.word)
+        )
+        for wc in word_counts
+    ]
+    
+    total_words = sum(wc.count for wc in word_counts)
+    
+    return UserSessionStatsResponse(
+        session_id=session_id,
+        user_id=current_user.id,
+        username=current_user.username,
+        display_name=current_user.display_name,
+        word_counts=word_count_list,
+        total_words=total_words,
+        session_started_at=session.started_at,
+        session_duration=session.duration_seconds
+    )
+
+
+@router.get("/compare", response_model=SessionComparisonResponse)
+async def compare_sessions(
+    session_ids: List[uuid.UUID] = Query(..., description="List of session IDs to compare"),
+    current_user: Profile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Compare my performance across multiple sessions.
+    Shows how I did in different recording sessions.
+    
+    Args:
+        session_ids: List of session IDs to compare (2-10 sessions)
+        
+    Returns:
+        Comparison of stats across sessions
+    """
+    if len(session_ids) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Must provide at least 2 sessions to compare"
+        )
+    
+    if len(session_ids) > 10:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot compare more than 10 sessions at once"
+        )
+    
+    # Get target words for emoji mapping
+    target_words = {tw.word: tw.emoji for tw in db.query(TargetWord).all()}
+    
+    # Build comparison data
+    sessions_data = []
+    total_across_all = 0
+    
+    for session_id in session_ids:
+        # Get session
+        session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        
+        if not session:
+            continue  # Skip missing sessions
+        
+        # Verify access
+        member = db.query(GroupMember).filter(
+            GroupMember.group_id == session.group_id,
+            GroupMember.user_id == current_user.id
+        ).first()
+        
+        if not member:
+            continue  # Skip unauthorized sessions
+        
+        # Get word counts for this session
+        word_counts = db.query(WordCount).filter(
+            WordCount.session_id == session_id,
+            WordCount.user_id == current_user.id
+        ).all()
+        
+        word_count_list = [
+            UserWordCountResponse(
+                word=wc.word,
+                count=wc.count,
+                emoji=target_words.get(wc.word)
+            )
+            for wc in word_counts
+        ]
+        
+        total_words = sum(wc.count for wc in word_counts)
+        unique_words = len(set(wc.word for wc in word_counts))
+        total_across_all += total_words
+        
+        sessions_data.append(SessionComparisonItem(
+            session_id=session_id,
+            started_at=session.started_at,
+            total_words=total_words,
+            unique_words=unique_words,
+            word_counts=word_count_list
+        ))
+    
+    # Sort by date
+    sessions_data.sort(key=lambda x: x.started_at)
+    
+    # Calculate average
+    average = total_across_all / len(sessions_data) if sessions_data else 0
+    
+    return SessionComparisonResponse(
+        user_id=current_user.id,
+        sessions=sessions_data,
+        total_across_sessions=total_across_all,
+        average_per_session=round(average, 1)
     )

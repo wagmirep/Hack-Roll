@@ -317,13 +317,17 @@ async def get_group_stats(
                 for word, count in stats["word_counts"].items()
             ]
             
+            # Create top_words dictionary for frontend compatibility
+            top_words = {word: count for word, count in stats["word_counts"].items()}
+            
             leaderboard.append(UserStatsResponse(
                 user_id=profile.id,
                 username=profile.username,
                 display_name=profile.display_name,
                 avatar_url=profile.avatar_url,
                 word_counts=word_counts,
-                total_words=stats["total_words"]
+                total_words=stats["total_words"],
+                top_words=top_words
             ))
     
     # Sort by total words

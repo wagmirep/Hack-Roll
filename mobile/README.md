@@ -169,6 +169,56 @@ eas build --profile development --platform ios
 eas build --profile production --platform all
 ```
 
+## 🚨 URGENT: New Feature to Implement
+
+### ✨ Three-Way Speaker Claiming System
+
+**Status:** 🔴 **Backend Complete - Frontend Implementation Required**
+
+The backend now supports **three different claiming modes** instead of just claiming as yourself:
+
+1. **Claim as Yourself** (`claim_type: 'self'`)
+2. **Tag Another User** (`claim_type: 'user'`) - Search and tag registered users
+3. **Tag as Guest** (`claim_type: 'guest'`) - Tag non-registered participants
+
+**What Needs to Be Done:**
+
+### 📝 Required Changes
+
+1. **Update Types** (`src/types/session.ts`)
+   - Add `claim_type`, `attributed_to_user_id`, `guest_name`, `is_guest` fields
+
+2. **Update ClaimingScreen** (`src/screens/ClaimingScreen.tsx`)
+   - Add claim mode selector (self/user/guest)
+   - Add user search with autocomplete (for 'user' mode)
+   - Add guest name input (for 'guest' mode)
+   - Update claim API call with new parameters
+
+3. **Update ResultsScreen** (`src/screens/ResultsScreen.tsx`)
+   - Display guest users alongside registered users
+   - Add "Guest" badge for non-registered participants
+   - Handle users without avatars/profiles
+
+4. **Update API Client** (`src/api/client.ts`)
+   - Add `searchUsers(query, groupId)` method
+   - Update `claimSpeaker()` to accept new parameters
+
+### 📚 Documentation
+
+Full implementation guide available at:
+- **`../CLAIMING_FEATURE_GUIDE.md`** - Quick reference with code examples
+- **`../TASKS.md`** - See "THREE-WAY CLAIMING SYSTEM" section
+
+### 🎯 Why This Matters
+
+- Friends without accounts can participate in sessions
+- Stats are correctly attributed to the right users
+- More flexible group recording scenarios
+
+**Priority:** HIGH - This is a core feature enhancement
+
+---
+
 ## Contributing
 
 1. Create feature branch

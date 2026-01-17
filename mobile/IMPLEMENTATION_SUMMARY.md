@@ -230,21 +230,153 @@ Record → Upload Chunks → End → Processing → Claim → Results
 - Loading states
 - Background uploads
 
+## 🚨 URGENT TODO: Three-Way Claiming System
+
+### ✨ New Feature (Backend Complete - Frontend Required)
+
+**Date Added:** January 17, 2026
+
+The backend now supports **three claiming modes** instead of just self-claiming:
+
+1. **Self Claim** - User claims speaker as themselves
+2. **User Tagging** - Search and tag another registered user  
+3. **Guest Tagging** - Tag non-registered participants
+
+### 📝 What You Need to Build
+
+#### 1. Update Types (`src/types/session.ts`)
+
+```typescript
+export interface Speaker {
+  id: string;
+  speaker_label: string;
+  segment_count: number;
+  claimed_by?: string;
+  claim_type?: 'self' | 'user' | 'guest';  // NEW
+  attributed_to_user_id?: string;          // NEW
+  guest_name?: string;                     // NEW
+  word_counts: WordCount[];
+  sample_audio_url?: string;
+}
+
+export interface SessionResult {
+  user_id?: string;
+  username?: string;
+  display_name?: string;
+  is_guest: boolean;                       // NEW
+  word_counts: WordCount[];
+  total_words: number;
+}
+```
+
+#### 2. Add User Search API (`src/api/client.ts`)
+
+```typescript
+export const searchUsers = async (
+  query: string,
+  groupId?: string
+): Promise<{ users: Array<{
+  id: string;
+  username: string;
+  display_name?: string;
+  avatar_url?: string;
+}>, total: number }> => {
+  const response = await api.get('/auth/search', {
+    params: { query, group_id: groupId, limit: 10 }
+  });
+  return response.data;
+};
+```
+
+#### 3. Enhance ClaimingScreen (`src/screens/ClaimingScreen.tsx`)
+
+Add:
+- Segmented control for claim mode (self/user/guest)
+- User search input with autocomplete (for 'user' mode)
+- Guest name text input (for 'guest' mode)
+- Updated claim button handler
+
+```typescript
+// Pseudo-code structure
+const [claimMode, setClaimMode] = useState<'self' | 'user' | 'guest'>('self');
+const [selectedUser, setSelectedUser] = useState(null);
+const [guestName, setGuestName] = useState('');
+
+const handleClaim = async (speakerId: string) => {
+  const claimData: any = {
+    speaker_id: speakerId,
+    claim_type: claimMode,
+  };
+  
+  if (claimMode === 'user') {
+    claimData.attributed_to_user_id = selectedUser.id;
+  } else if (claimMode === 'guest') {
+    claimData.guest_name = guestName;
+  }
+  
+  await api.claimSpeaker(sessionId, claimData);
+};
+```
+
+#### 4. Update ResultsScreen (`src/screens/ResultsScreen.tsx`)
+
+Add:
+- Display logic for guest users
+- "Guest" badge for non-registered participants
+- Handle missing avatars/usernames for guests
+
+```typescript
+<UserCard>
+  {user.is_guest ? (
+    <View style={styles.guestBadge}>
+      <Text>Guest</Text>
+    </View>
+  ) : (
+    <Avatar source={{ uri: user.avatar_url }} />
+  )}
+  <Text>{user.display_name || user.username || 'Unknown'}</Text>
+</UserCard>
+```
+
+### 📚 Full Documentation
+
+- **Quick Reference:** `../CLAIMING_FEATURE_GUIDE.md`
+- **Detailed Spec:** `../TASKS.md` (search for "THREE-WAY CLAIMING SYSTEM")
+- **Backend Changes:** `../backend/migrations/002_add_claim_types.sql`
+
+### ✅ Testing Checklist
+
+- [ ] Can select claim mode (self/user/guest)
+- [ ] User search works and filters by group
+- [ ] Can tag another user and they get the stats
+- [ ] Can enter guest name and guest appears in results
+- [ ] Guest users show "Guest" badge
+- [ ] Guest stats don't affect leaderboards
+- [ ] All three modes work end-to-end
+
+---
+
 ## 📋 Next Steps
 
 ### Immediate (Critical for Demo)
 
-1. **Backend Integration**
+1. **🚨 Implement Three-Way Claiming** ⬆️ SEE ABOVE
+   - Update types
+   - Add user search
+   - Enhance ClaimingScreen
+   - Update ResultsScreen
+
+2. **Backend Integration**
    - Ensure backend endpoints match
    - Test end-to-end flow
    - Verify audio processing
 
-2. **Group Management**
+3. **Group Management**
    - Add group creation UI
    - Add invite code joining
    - Display group list
 
-3. **Testing**
+4. **Testing**
    - Test on physical device
    - Record real conversations
    - Verify word detection

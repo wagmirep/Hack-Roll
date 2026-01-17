@@ -8,13 +8,18 @@ import { ActivityIndicator, View, StyleSheet } from 'react-native';
 export function AppNavigator() {
   const { session, loading } = useAuth();
 
+  console.log('AppNavigator render - loading:', loading, 'session:', session?.user?.id || 'null');
+
   if (loading) {
+    console.log('Showing loading spinner');
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#007AFF" />
       </View>
     );
   }
+
+  console.log('Loading complete - showing', session ? 'MainNavigator' : 'AuthNavigator');
 
   return (
     <NavigationContainer>
