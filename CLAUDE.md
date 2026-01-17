@@ -62,10 +62,10 @@ Weekly Wrapped: Spotify-style statistics visualization
 
 | Name | Role | Responsibilities |
 |------|------|------------------|
-| Nickolas | Full Stack + ML | Backend API, ASR integration, speaker diarization |
-| Winston | Mobile | React Native app, recording, claiming UI |
-| Harshith | Backend | Database, Firebase sync, API endpoints |
-| Toshiki | Frontend/Design | Statistics visualization, Spotify Wrapped UI |
+| Nickolas | ML | ASR integration, speaker diarization, fine-tuning |
+| Winston | Backend | Backend API, Database, Firebase sync, processing pipeline |
+| Harshith | Mobile/Frontend | React Native app, recording, claiming UI, statistics visualization |
+| Toshiki | Mobile/Frontend | React Native app, recording, claiming UI, Spotify Wrapped UI |
 
 ---
 
