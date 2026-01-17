@@ -1,62 +1,73 @@
 # LahStats ML Services — Roadmap
 
 **Milestone:** v1.0 — Working ML Pipeline
-**Status:** Not Started
+**Status:** In Progress (Phases 1-3 Complete)
 
 ---
 
-## Phase 1: Model Setup & Validation
+## Phase 1: Model Setup & Validation ✅
 
 **Goal:** Get both ML models loading and running locally
 
+**Status:** Complete
+
 **Delivers:**
-- Dependencies installed and working
-- pyannote model loads with HuggingFace auth
-- MERaLiON model loads via transformers
-- Test scripts verify both models work
+- ✅ Dependencies installed and working
+- ✅ pyannote model loads with HuggingFace auth
+- ✅ MERaLiON model loads via transformers
+- ✅ Test scripts verify both models work
 
 **Key files:**
-- `backend/requirements.txt` (uncomment dependencies)
-- `scripts/test_pyannote.py`
-- `scripts/test_meralion.py`
+- `backend/requirements.txt` — Dependencies uncommented and organized
+- `scripts/test_pyannote.py` — Full test suite with auth, model loading, diarization tests
+- `scripts/test_meralion.py` — Full test suite with model loading, transcription tests
 
-**Success:** Both test scripts run successfully on sample audio
+**Completed by:** Agent 1 (diarization), Agent 2 (transcription)
 
 ---
 
-## Phase 2: Speaker Diarization Service
+## Phase 2: Speaker Diarization Service ✅
 
 **Goal:** Implement pyannote wrapper that segments audio by speaker
 
+**Status:** Complete
+
 **Delivers:**
-- `backend/services/diarization.py` fully implemented
-- Model loading with caching (singleton pattern)
-- `diarize_audio(path)` → returns speaker segments
-- `extract_speaker_segment(audio, start, end)` → extracts clip
-- Handles overlapping speech (filter or flag)
+- ✅ `backend/services/diarization.py` fully implemented (386 lines)
+- ✅ Model loading with caching (singleton pattern, thread-safe)
+- ✅ `diarize_audio(path)` → returns `List[SpeakerSegment]`
+- ✅ `extract_speaker_segment(audio, start, end)` → extracts clip as bytes
+- ✅ `filter_overlapping_segments()` → handles overlapping speech
+- ✅ `get_speaker_sample()` / `get_all_speaker_samples()` → claiming audio
 
 **Key files:**
 - `backend/services/diarization.py`
 
-**Success:** Given test audio with 2+ speakers, returns correct time-stamped segments
+**Completed by:** Agent 1
 
 ---
 
-## Phase 3: ASR Transcription Service
+## Phase 3: ASR Transcription Service ✅
 
 **Goal:** Implement MERaLiON wrapper with Singlish corrections
 
+**Status:** Complete
+
 **Delivers:**
-- `backend/services/transcription.py` fully implemented
-- Model loading with caching
-- `transcribe_audio(path)` → returns text
-- `apply_corrections(text)` → fixes Singlish misrecognitions
-- `count_target_words(text)` → returns word counts dict
+- ✅ `backend/services/transcription.py` fully implemented (407 lines)
+- ✅ Model loading with caching (singleton pattern, thread-safe)
+- ✅ `transcribe_audio(path)` → returns raw text
+- ✅ `transcribe_segment(bytes)` → transcribe from audio bytes
+- ✅ `apply_corrections(text)` → fixes Singlish misrecognitions (20+ patterns)
+- ✅ `count_target_words(text)` → returns word counts dict (20 target words)
+- ✅ `process_transcription(text)` → combined corrections + counting
 
 **Key files:**
 - `backend/services/transcription.py`
 
-**Success:** Transcribes Singlish audio, corrections work, word counts accurate
+**Tests:** 64 unit tests passing (test_transcription.py, test_word_counting.py)
+
+**Completed by:** Agent 2 (model code), Agent 3 (NLP corrections)
 
 ---
 
@@ -84,17 +95,19 @@
 
 | Phase | Name | Status | Dependency |
 |-------|------|--------|------------|
-| 1 | Model Setup & Validation | Not Started | — |
-| 2 | Speaker Diarization Service | Not Started | Phase 1 |
-| 3 | ASR Transcription Service | Not Started | Phase 1 |
+| 1 | Model Setup & Validation | ✅ Complete | — |
+| 2 | Speaker Diarization Service | ✅ Complete | Phase 1 |
+| 3 | ASR Transcription Service | ✅ Complete | Phase 1 |
 | 4 | Processing Pipeline Integration | Not Started | Phase 2, 3 |
 
 **Notes:**
-- Phases 2 and 3 can run in parallel after Phase 1
-- Phase 4 requires both services complete
-- Fine-tuning is OUT OF SCOPE (doing separately)
+- Phases 1-3 completed via parallel agent development (4 agents)
+- Phase 4 requires both services complete — ready to start
+- Fine-tuning data prep also complete (Agent 4): `ml/scripts/prepare_singlish_data.py`, `ml/scripts/filter_imda.py`
+- 95 unit tests passing across backend and ML
 
 ---
 
 *Created: 2026-01-17*
+*Updated: 2026-01-17 — Phases 1-3 complete*
 *Milestone: v1.0*
