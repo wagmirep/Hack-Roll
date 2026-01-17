@@ -1,0 +1,18 @@
+# ml/data/processed/ - Processed Training Data
+#
+# PURPOSE:
+#     Store processed and filtered training samples.
+#     Ready for use by training scripts.
+#
+# REFERENCED BY:
+#     - scripts/prepare_imda_data.py - Writes processed data here
+#     - scripts/train_lora.py - Reads training data
+#
+# STRUCTURE:
+#     processed/
+#     ├── manifest.json - Sample metadata
+#     ├── audio/ - Processed audio files
+#     └── transcripts/ - Ground truth transcriptions
+#
+# NOTE:
+#     Processed data may be large - consider .gitignore

@@ -1,0 +1,64 @@
+# training_config.yaml - Training Configuration
+#
+# PURPOSE:
+#     Define training hyperparameters and settings.
+#     Controls training loop behavior.
+#
+# REFERENCED BY:
+#     - scripts/train_lora.py - Loads this config
+#
+# REFERENCES:
+#     - ml/configs/lora_config.yaml - LoRA settings
+#     - ml/data/splits/ - Data paths
+
+# =============================================================================
+# MODEL
+# =============================================================================
+# model:
+#   base_model: "MERaLiON/MERaLiON-2-10B-ASR"
+#   load_in_8bit: false        # 8-bit quantization (saves memory)
+#   load_in_4bit: false        # 4-bit quantization (saves more memory)
+
+# =============================================================================
+# DATA
+# =============================================================================
+# data:
+#   train_path: "ml/data/splits/train.json"
+#   val_path: "ml/data/splits/val.json"
+#   test_path: "ml/data/splits/test.json"
+#   max_audio_length: 30       # seconds
+#   sample_rate: 16000         # Hz
+
+# =============================================================================
+# TRAINING
+# =============================================================================
+# training:
+#   epochs: 3
+#   batch_size: 4              # Reduce if OOM
+#   gradient_accumulation_steps: 4
+#   learning_rate: 1e-4
+#   warmup_steps: 100
+#   weight_decay: 0.01
+#   max_grad_norm: 1.0
+#   fp16: true                 # Use mixed precision
+#   bf16: false                # Use bfloat16 (if supported)
+
+# =============================================================================
+# CHECKPOINTING
+# =============================================================================
+# checkpointing:
+#   output_dir: "ml/checkpoints"
+#   save_steps: 500
+#   save_total_limit: 3        # Keep last N checkpoints
+#   evaluation_strategy: "steps"
+#   eval_steps: 500
+#   load_best_model_at_end: true
+#   metric_for_best_model: "eval_loss"
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+# logging:
+#   logging_steps: 50
+#   report_to: "tensorboard"   # or "wandb"
+#   run_name: "lahstats-lora-v1"

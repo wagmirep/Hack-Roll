@@ -1,49 +1,55 @@
-# .env.example - Environment Variables Template
+# ml/requirements.txt - ML Training Dependencies
 #
 # PURPOSE:
-#     Template for backend environment variables.
-#     Copy to .env and fill in your values.
+#     Define Python dependencies for ML training pipeline.
+#     Separate from backend to allow independent environment.
 #
 # REFERENCED BY:
-#     - config.py - Loads these variables
-#     - docker-compose.yml - May override some values
+#     - Training scripts
+#     - CI/CD training pipeline
 #
-# USAGE:
-#     cp .env.example .env
-#     # Edit .env with your actual values
+# INSTALL:
+#     pip install -r requirements.txt
 
 # =============================================================================
-# DATABASE
+# CORE ML
 # =============================================================================
-DATABASE_URL=postgresql://user:password@localhost:5432/lahstats
+# torch
+# transformers
+# accelerate
+# peft                    # For LoRA adapters
+# datasets                # HuggingFace datasets
+# evaluate                # Metrics
 
 # =============================================================================
-# REDIS
+# AUDIO
 # =============================================================================
-REDIS_URL=redis://localhost:6379
+# librosa
+# soundfile
+# torchaudio
 
 # =============================================================================
-# AWS S3 STORAGE
+# TRAINING
 # =============================================================================
-S3_BUCKET=lahstats-audio
-AWS_ACCESS_KEY_ID=your-access-key-id
-AWS_SECRET_ACCESS_KEY=your-secret-access-key
-AWS_REGION=ap-southeast-1
+# tensorboard             # Logging
+# wandb                   # Alternative logging (optional)
+# tqdm                    # Progress bars
 
 # =============================================================================
-# HUGGINGFACE (for pyannote authentication)
+# DATA
 # =============================================================================
-HUGGINGFACE_TOKEN=hf_your_token_here
+# pandas
+# numpy
+# pyyaml                  # Config loading
 
 # =============================================================================
-# FIREBASE
+# TESTING
 # =============================================================================
-FIREBASE_PROJECT_ID=lahstats
-FIREBASE_CREDENTIALS=path/to/firebase-credentials.json
+# pytest
+# jiwer                   # WER calculation
 
 # =============================================================================
-# APPLICATION
+# UTILITIES
 # =============================================================================
-DEBUG=false
-API_HOST=0.0.0.0
-API_PORT=8000
+# python-dotenv
+# huggingface-hub

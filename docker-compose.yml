@@ -1,0 +1,55 @@
+# docker-compose.yml - Docker Compose Configuration
+#
+# PURPOSE:
+#     Orchestrate local development services.
+#     Runs PostgreSQL, Redis, and optionally backend services.
+#
+# REFERENCED BY:
+#     - Development workflow
+#     - CI/CD pipeline
+#     - deploy.sh
+#
+# REFERENCES:
+#     - backend/.env.example - Environment variables
+#     - backend/main.py - API service
+#     - backend/worker.py - Worker service
+#
+# SERVICES:
+#     postgres:
+#         - PostgreSQL database
+#         - Port: 5432
+#         - Data persisted in volume
+#
+#     redis:
+#         - Redis queue/cache
+#         - Port: 6379
+#
+#     api (optional):
+#         - Backend API service
+#         - Port: 8000
+#         - Depends on postgres, redis
+#
+#     worker (optional):
+#         - Background job worker
+#         - Depends on postgres, redis
+#
+# USAGE:
+#     # Start infrastructure only (recommended for dev)
+#     docker-compose up -d postgres redis
+#
+#     # Start everything
+#     docker-compose up -d
+#
+#     # View logs
+#     docker-compose logs -f
+#
+#     # Stop all
+#     docker-compose down
+#
+#     # Reset database
+#     docker-compose down -v
+#     docker-compose up -d
+#
+# VOLUMES:
+#     postgres_data - Persistent database storage
+#     redis_data - Persistent cache (optional)
