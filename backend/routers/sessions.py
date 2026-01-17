@@ -6,7 +6,7 @@ PURPOSE:
     Handles session lifecycle from start to claiming completion.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from database import get_db
@@ -46,7 +46,7 @@ async def list_sessions(
 ):
     """
     Get session history with filters and pagination.
-    Shows sessions the user has access to (their groups).
+    Shows sessions the user has access to (their groups and personal sessions).
     
     Args:
         group_id: Optional filter by specific group
@@ -57,12 +57,16 @@ async def list_sessions(
     Returns:
         List of sessions with summary stats
     """
-    # Build base query - only sessions from groups user is in
-    query = db.query(SessionModel).join(
+    # Build base query - sessions from groups user is in OR personal sessions started by user
+    from sqlalchemy import or_
+    query = db.query(SessionModel).outerjoin(
         GroupMember,
         GroupMember.group_id == SessionModel.group_id
     ).filter(
-        GroupMember.user_id == current_user.id
+        or_(
+            GroupMember.user_id == current_user.id,  # Group sessions
+            SessionModel.started_by == current_user.id  # Personal sessions
+        )
     )
     
     # Apply filters
@@ -127,24 +131,32 @@ async def create_session(
     Create a new recording session.
     
     Args:
-        request: Session creation details
+        request: Session creation details (group_id optional)
         
     Returns:
         Created session
     """
-    # Verify user is member of group
-    member = db.query(GroupMember).filter(
-        GroupMember.group_id == request.group_id,
-        GroupMember.user_id == current_user.id
-    ).first()
+    logger.info(f"=" * 80)
+    logger.info(f"🎙️  NEW SESSION REQUEST")
+    logger.info(f"   User: {current_user.id} ({current_user.username})")
+    logger.info(f"   Group ID: {request.group_id if request.group_id else 'Personal session'}")
     
-    if not member:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not a member of this group"
-        )
+    # If group_id provided, verify user is member
+    if request.group_id:
+        member = db.query(GroupMember).filter(
+            GroupMember.group_id == request.group_id,
+            GroupMember.user_id == current_user.id
+        ).first()
+        
+        if not member:
+            logger.warning(f"❌ User {current_user.id} not a member of group {request.group_id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not a member of this group"
+            )
+        logger.info(f"   ✓ User is member of group {request.group_id}")
     
-    # Create session
+    # Create session (group_id can be null for personal sessions)
     session = SessionModel(
         group_id=request.group_id,
         started_by=current_user.id,
@@ -154,6 +166,13 @@ async def create_session(
     db.commit()
     db.refresh(session)
     
+    logger.info(f"✅ Session created successfully")
+    logger.info(f"   Session ID: {session.id}")
+    logger.info(f"   Status: {session.status}")
+    logger.info(f"   Started at: {session.started_at}")
+    logger.info(f"🎬 Ready to receive audio chunks...")
+    logger.info(f"=" * 80)
+    
     return session
 
 
@@ -161,6 +180,7 @@ async def create_session(
 async def upload_chunk(
     session_id: uuid.UUID,
     file: UploadFile = File(...),
+    duration_seconds: float = Form(None),
     current_user: Profile = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -170,54 +190,96 @@ async def upload_chunk(
     Args:
         session_id: Session ID
         file: Audio file chunk
+        duration_seconds: Optional duration of the chunk in seconds
         
     Returns:
         Upload confirmation
     """
-    # Get session
-    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
-    
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found"
+    try:
+        logger.info(f"=" * 80)
+        logger.info(f"📥 CHUNK UPLOAD REQUEST - Session: {session_id}")
+        logger.info(f"   File: {file.filename}, Content-Type: {file.content_type}")
+        logger.info(f"   Duration: {duration_seconds}s")
+        logger.info(f"   User: {current_user.id}")
+        
+        # Get session
+        session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        
+        if not session:
+            logger.warning(f"❌ Session {session_id} not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found"
+            )
+        
+        logger.info(f"   Session status: {session.status}")
+        
+        # Verify user is authorized (in group or personal session)
+        if session.group_id:
+            member = db.query(GroupMember).filter(
+                GroupMember.group_id == session.group_id,
+                GroupMember.user_id == current_user.id
+            ).first()
+            
+            if not member:
+                logger.warning(f"❌ User {current_user.id} not authorized for group session")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to upload to this session"
+                )
+        else:
+            # Personal session - verify user started it
+            if session.started_by != current_user.id:
+                logger.warning(f"❌ User {current_user.id} not authorized for personal session")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to upload to this session"
+                )
+        
+        # Get next chunk number
+        chunk_count = db.query(AudioChunk).filter(
+            AudioChunk.session_id == session_id
+        ).count()
+        chunk_number = chunk_count + 1
+        
+        logger.info(f"📤 Uploading chunk #{chunk_number} for session {session_id}")
+        logger.info(f"   Total chunks so far: {chunk_count}")
+        
+        # Upload to storage
+        logger.debug(f"   Calling storage.upload_chunk()...")
+        storage_path = await storage.upload_chunk(session_id, chunk_number, file)
+        
+        logger.info(f"✅ Chunk uploaded to Supabase Storage")
+        logger.info(f"   Storage path: {storage_path}")
+        
+        # Save chunk record
+        chunk = AudioChunk(
+            session_id=session_id,
+            chunk_number=chunk_number,
+            storage_path=storage_path,
+            duration_seconds=duration_seconds
         )
-    
-    # Verify user is in the group
-    member = db.query(GroupMember).filter(
-        GroupMember.group_id == session.group_id,
-        GroupMember.user_id == current_user.id
-    ).first()
-    
-    if not member:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to upload to this session"
+        db.add(chunk)
+        db.commit()
+        
+        logger.info(f"✅ Chunk #{chunk_number} record saved to database")
+        logger.info(f"   Session now has {chunk_number} chunk(s)")
+        logger.info(f"=" * 80)
+        
+        return ChunkUploadResponse(
+            chunk_number=chunk_number,
+            uploaded=True,
+            storage_path=storage_path
         )
-    
-    # Get next chunk number
-    chunk_count = db.query(AudioChunk).filter(
-        AudioChunk.session_id == session_id
-    ).count()
-    chunk_number = chunk_count + 1
-    
-    # Upload to storage
-    storage_path = await storage.upload_chunk(session_id, chunk_number, file)
-    
-    # Save chunk record
-    chunk = AudioChunk(
-        session_id=session_id,
-        chunk_number=chunk_number,
-        storage_path=storage_path
-    )
-    db.add(chunk)
-    db.commit()
-    
-    return ChunkUploadResponse(
-        chunk_number=chunk_number,
-        uploaded=True,
-        storage_path=storage_path
-    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error uploading chunk: {type(e).__name__}: {str(e)}", exc_info=True)
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload chunk: {str(e)}"
+        )
 
 
 @router.post("/{session_id}/end", response_model=SessionResponse)
@@ -237,28 +299,51 @@ async def end_session(
     Returns:
         Updated session
     """
+    logger.info(f"=" * 80)
+    logger.info(f"🛑 END SESSION REQUEST - Session: {session_id}")
+    logger.info(f"   User: {current_user.id}")
+    logger.info(f"   Final duration: {request.final_duration_seconds}s")
+    
     # Get session
     session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
     
     if not session:
+        logger.warning(f"❌ Session {session_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Session not found"
         )
     
-    # Verify user started the session or is in the group
-    member = db.query(GroupMember).filter(
-        GroupMember.group_id == session.group_id,
-        GroupMember.user_id == current_user.id
-    ).first()
+    # Count chunks
+    chunk_count = db.query(AudioChunk).filter(
+        AudioChunk.session_id == session_id
+    ).count()
+    logger.info(f"   Session has {chunk_count} audio chunk(s)")
     
-    if not member:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized"
-        )
+    # Verify user is authorized (in group or personal session)
+    if session.group_id:
+        member = db.query(GroupMember).filter(
+            GroupMember.group_id == session.group_id,
+            GroupMember.user_id == current_user.id
+        ).first()
+        
+        if not member:
+            logger.warning(f"❌ User {current_user.id} not authorized")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized"
+            )
+    else:
+        # Personal session - verify user started it
+        if session.started_by != current_user.id:
+            logger.warning(f"❌ User {current_user.id} not authorized")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized"
+            )
     
     # Update session
+    logger.info(f"📝 Updating session status: recording → processing")
     session.ended_at = datetime.utcnow()
     session.status = "processing"
     session.progress = 0
@@ -268,9 +353,11 @@ async def end_session(
     
     db.commit()
     db.refresh(session)
+    logger.info(f"✅ Session status updated in database")
     
     # Queue processing job to Redis
     try:
+        logger.info(f"📮 Queueing job to Redis...")
         redis_client = get_redis_client()
         job_payload = json.dumps({
             "session_id": str(session_id),
@@ -278,8 +365,14 @@ async def end_session(
         })
         
         redis_client.lpush(PROCESSING_QUEUE, job_payload)
-        logger.info(f"✅ Queued processing job for session {session_id}")
-        logger.debug(f"Job payload: {job_payload}")
+        queue_length = redis_client.llen(PROCESSING_QUEUE)
+        
+        logger.info(f"✅ Job queued successfully to Redis")
+        logger.info(f"   Queue: {PROCESSING_QUEUE}")
+        logger.info(f"   Queue length: {queue_length}")
+        logger.info(f"   Payload: {job_payload}")
+        logger.info(f"🎬 Worker should pick this up shortly...")
+        logger.info(f"=" * 80)
         
     except Exception as e:
         logger.error(f"❌ Failed to queue processing job: {e}", exc_info=True)
@@ -319,17 +412,25 @@ async def get_session_status(
             detail="Session not found"
         )
     
-    # Verify user is in the group
-    member = db.query(GroupMember).filter(
-        GroupMember.group_id == session.group_id,
-        GroupMember.user_id == current_user.id
-    ).first()
-    
-    if not member:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized"
-        )
+    # Verify user is authorized (in group or personal session)
+    if session.group_id:
+        member = db.query(GroupMember).filter(
+            GroupMember.group_id == session.group_id,
+            GroupMember.user_id == current_user.id
+        ).first()
+        
+        if not member:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized"
+            )
+    else:
+        # Personal session - verify user started it
+        if session.started_by != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized"
+            )
     
     return session
 
@@ -358,17 +459,25 @@ async def get_session_speakers(
             detail="Session not found"
         )
     
-    # Verify user is in the group
-    member = db.query(GroupMember).filter(
-        GroupMember.group_id == session.group_id,
-        GroupMember.user_id == current_user.id
-    ).first()
-    
-    if not member:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized"
-        )
+    # Verify user is authorized (in group or personal session)
+    if session.group_id:
+        member = db.query(GroupMember).filter(
+            GroupMember.group_id == session.group_id,
+            GroupMember.user_id == current_user.id
+        ).first()
+        
+        if not member:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized"
+            )
+    else:
+        # Personal session - verify user started it
+        if session.started_by != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized"
+            )
     
     # Get speakers with word counts
     speakers = db.query(SessionSpeaker).filter(
@@ -452,17 +561,25 @@ async def claim_speaker(
             detail="Session not found"
         )
     
-    # Verify user is in the group
-    member = db.query(GroupMember).filter(
-        GroupMember.group_id == session.group_id,
-        GroupMember.user_id == current_user.id
-    ).first()
-    
-    if not member:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized"
-        )
+    # Verify user is authorized (in group or personal session)
+    if session.group_id:
+        member = db.query(GroupMember).filter(
+            GroupMember.group_id == session.group_id,
+            GroupMember.user_id == current_user.id
+        ).first()
+        
+        if not member:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized"
+            )
+    else:
+        # Personal session - verify user started it
+        if session.started_by != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized"
+            )
     
     # Get speaker
     speaker = db.query(SessionSpeaker).filter(
@@ -483,7 +600,7 @@ async def claim_speaker(
             detail="Speaker already claimed"
         )
     
-    # For 'user' claim type, verify the attributed user exists and is in the group
+    # For 'user' claim type, verify the attributed user exists and is in the group (if session has group)
     if request.claim_type == 'user':
         attributed_user = db.query(Profile).filter(
             Profile.id == request.attributed_to_user_id
@@ -495,17 +612,18 @@ async def claim_speaker(
                 detail="Attributed user not found"
             )
         
-        # Check if attributed user is in the group
-        attributed_member = db.query(GroupMember).filter(
-            GroupMember.group_id == session.group_id,
-            GroupMember.user_id == request.attributed_to_user_id
-        ).first()
-        
-        if not attributed_member:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Attributed user is not a member of this group"
-            )
+        # Check if attributed user is in the group (only for group sessions)
+        if session.group_id:
+            attributed_member = db.query(GroupMember).filter(
+                GroupMember.group_id == session.group_id,
+                GroupMember.user_id == request.attributed_to_user_id
+            ).first()
+            
+            if not attributed_member:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Attributed user is not a member of this group"
+                )
     
     # Update speaker with claim information
     speaker.claimed_by = current_user.id
@@ -589,17 +707,25 @@ async def get_session_results(
             detail="Session not found"
         )
     
-    # Verify user is in the group
-    member = db.query(GroupMember).filter(
-        GroupMember.group_id == session.group_id,
-        GroupMember.user_id == current_user.id
-    ).first()
-    
-    if not member:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized"
-        )
+    # Verify user is authorized (in group or personal session)
+    if session.group_id:
+        member = db.query(GroupMember).filter(
+            GroupMember.group_id == session.group_id,
+            GroupMember.user_id == current_user.id
+        ).first()
+        
+        if not member:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized"
+            )
+    else:
+        # Personal session - verify user started it
+        if session.started_by != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized"
+            )
     
     # Get target words with emojis
     target_words = {tw.word: tw.emoji for tw in db.query(TargetWord).all()}
@@ -717,17 +843,25 @@ async def get_my_session_stats(
             detail="Session not found"
         )
     
-    # Verify user is in the group
-    member = db.query(GroupMember).filter(
-        GroupMember.group_id == session.group_id,
-        GroupMember.user_id == current_user.id
-    ).first()
-    
-    if not member:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized"
-        )
+    # Verify user is authorized (in group or personal session)
+    if session.group_id:
+        member = db.query(GroupMember).filter(
+            GroupMember.group_id == session.group_id,
+            GroupMember.user_id == current_user.id
+        ).first()
+        
+        if not member:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized"
+            )
+    else:
+        # Personal session - verify user started it
+        if session.started_by != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized"
+            )
     
     # Get target words for emoji mapping
     target_words = {tw.word: tw.emoji for tw in db.query(TargetWord).all()}
@@ -804,14 +938,19 @@ async def compare_sessions(
         if not session:
             continue  # Skip missing sessions
         
-        # Verify access
-        member = db.query(GroupMember).filter(
-            GroupMember.group_id == session.group_id,
-            GroupMember.user_id == current_user.id
-        ).first()
-        
-        if not member:
-            continue  # Skip unauthorized sessions
+        # Verify access (in group or personal session)
+        if session.group_id:
+            member = db.query(GroupMember).filter(
+                GroupMember.group_id == session.group_id,
+                GroupMember.user_id == current_user.id
+            ).first()
+            
+            if not member:
+                continue  # Skip unauthorized sessions
+        else:
+            # Personal session - verify user started it
+            if session.started_by != current_user.id:
+                continue  # Skip unauthorized sessions
         
         # Get word counts for this session
         word_counts = db.query(WordCount).filter(

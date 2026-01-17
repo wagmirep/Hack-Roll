@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,12 +12,14 @@ import {
   FlatList,
   ViewToken,
   useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { RecordStackParamList } from '../navigation/MainNavigator';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { api } from '../api/client';
 
 type WrappedScreenNavigationProp = StackNavigationProp<RecordStackParamList, 'Wrapped'>;
 type WrappedScreenRouteProp = RouteProp<RecordStackParamList, 'Wrapped'>;
@@ -44,91 +46,112 @@ interface WrappedData {
 }
 
 export default function WrappedScreen({ navigation, route }: Props) {
-  const { width: SCREEN_WIDTH } = useWindowDimensions(); // Dynamic width that updates on resize
+  const { sessionId } = route.params;
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [showSpeakerModal, setShowSpeakerModal] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  
+  // State for fetching real data
+  const [data, setData] = useState<WrappedData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock data - replace with actual data from route params or API
-  const data: WrappedData = route.params?.data || {
-    singlishWordsCount: 23,
-    totalWords: 342,
-    sessionDuration: '5:34',
-    speakers: [
-      {
-        id: 'speaker1',
-        name: 'Speaker 1',
-        handle: '@speaker1',
-        totalWords: 342,
-        topWord: 'lah',
-        wordBreakdown: [
-          { word: 'lah', count: 45 },
-          { word: 'okay', count: 32 },
-          { word: 'actually', count: 28 },
-          { word: 'like', count: 24 },
-          { word: 'right', count: 18 },
-          { word: 'so', count: 15 },
-        ],
-      },
-      {
-        id: 'speaker2',
-        name: 'Sarah Tan',
-        handle: '@sarahtan',
-        totalWords: 256,
-        topWord: 'sia',
-        wordBreakdown: [
-          { word: 'sia', count: 38 },
-          { word: 'lah', count: 25 },
-          { word: 'walao', count: 20 },
-        ],
-      },
-      {
-        id: 'speaker3',
-        name: 'John Lim',
-        handle: '@johnlim',
-        totalWords: 198,
-        topWord: 'leh',
-        wordBreakdown: [
-          { word: 'leh', count: 30 },
-          { word: 'okay', count: 22 },
-        ],
-      },
-      {
-        id: 'speaker4',
-        name: 'Wei Ming',
-        handle: '@weiming',
-        totalWords: 174,
-        topWord: 'lor',
-        wordBreakdown: [
-          { word: 'lor', count: 28 },
-          { word: 'like', count: 19 },
-        ],
-      },
-      {
-        id: 'speaker5',
-        name: 'Priya Kumar',
-        handle: '@priyakumar',
-        totalWords: 156,
-        topWord: 'meh',
-        wordBreakdown: [
-          { word: 'meh', count: 24 },
-          { word: 'can', count: 18 },
-        ],
-      },
-      {
-        id: 'speaker6',
-        name: 'Alex Wong',
-        handle: '@alexwong',
-        totalWords: 143,
-        topWord: 'lah',
-        wordBreakdown: [
-          { word: 'lah', count: 22 },
-          { word: 'sia', count: 16 },
-        ],
-      },
-    ],
+  // Fetch session results from backend
+  useEffect(() => {
+    const fetchSessionResults = async () => {
+      try {
+        console.log(`Fetching results for session: ${sessionId}`);
+        setLoading(true);
+        
+        const results = await api.sessions.getResults(sessionId);
+        console.log('Session results:', results);
+        
+        // Transform backend data to match WrappedData format
+        const transformedData: WrappedData = {
+          singlishWordsCount: results.total_singlish_words || 0,
+          totalWords: results.total_words || 0,
+          sessionDuration: formatDuration(results.duration_seconds || 0),
+          speakers: results.speakers.map((speaker: any) => ({
+            id: speaker.speaker_id,
+            name: speaker.name || `Speaker ${speaker.speaker_id}`,
+            handle: speaker.username ? `@${speaker.username}` : `@speaker${speaker.speaker_id}`,
+            totalWords: speaker.total_words || 0,
+            topWord: speaker.top_word?.word || 'N/A',
+            wordBreakdown: (speaker.word_counts || []).map((wc: any) => ({
+              word: wc.word,
+              count: wc.count,
+            })),
+          })),
+        };
+        
+        setData(transformedData);
+        setError(null);
+      } catch (err: any) {
+        console.error('Error fetching session results:', err);
+        setError(err.message || 'Failed to load session results');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSessionResults();
+  }, [sessionId]);
+
+  // Helper function to format duration
+  const formatDuration = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Loading state
+  if (loading) {
+    return (
+      <LinearGradient
+        colors={['#FF6B5A', '#FF8A7A']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.container}
+      >
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#fff" />
+            <Text style={styles.loadingText}>Loading your Wrapped...</Text>
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
+  // Error state
+  if (error || !data) {
+    return (
+      <LinearGradient
+        colors={['#FF6B5A', '#FF8A7A']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.container}
+      >
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorTitle}>Oops!</Text>
+            <Text style={styles.errorMessage}>
+              {error || 'Failed to load session results'}
+            </Text>
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={() => navigation.goBack()}
+            >
+              <Text style={styles.retryButtonText}>Go Back</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
+  // Data is already loaded, continue with rendering
   const totalSlides = 1 + data.speakers.length; // 1 summary + 1 per speaker
   
   // Create slides array: [summary, speaker1, speaker2, ...]
@@ -365,6 +388,48 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  loadingText: {
+    fontSize: 18,
+    color: '#fff',
+    marginTop: 20,
+    fontWeight: '600',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  errorTitle: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 12,
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 24,
+    opacity: 0.9,
+  },
+  retryButton: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 24,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FF6B5A',
   },
   pageIndicators: {
     flexDirection: 'row',

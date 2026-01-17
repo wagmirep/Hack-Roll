@@ -12,6 +12,8 @@ from fastapi.responses import JSONResponse
 from datetime import datetime
 import sys
 import os
+import time
+import logging
 
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -22,6 +24,9 @@ from schemas import HealthResponse, ErrorResponse
 
 # Import routers
 from routers import auth, groups, sessions, stats
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Create FastAPI app
 app = FastAPI(
@@ -40,6 +45,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all incoming requests and their response times"""
+    start_time = time.time()
+    
+    # Log request
+    logger.info(f"🌐 {request.method} {request.url.path}")
+    if request.query_params:
+        logger.debug(f"   Query params: {dict(request.query_params)}")
+    
+    # Process request
+    response = await call_next(request)
+    
+    # Calculate duration
+    duration = time.time() - start_time
+    
+    # Log response
+    status_emoji = "✅" if response.status_code < 400 else "❌"
+    logger.info(f"{status_emoji} {request.method} {request.url.path} → {response.status_code} ({duration:.2f}s)")
+    
+    return response
 
 
 # Global exception handler
