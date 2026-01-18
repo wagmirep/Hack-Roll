@@ -136,7 +136,6 @@
 
 **Notes:**
 - All phases completed via parallel agent development
-- Fine-tuning data prep also complete (Agent 4): `ml/scripts/prepare_singlish_data.py`, `ml/scripts/filter_imda.py`
 - 95+ unit tests passing across backend and ML
 - **v1.0 ML Pipeline is feature-complete**
 

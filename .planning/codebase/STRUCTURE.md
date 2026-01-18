@@ -37,11 +37,6 @@ Hack-Roll/
 │   ├── package.json           # Node dependencies
 │   └── tsconfig.json          # TypeScript config
 │
-├── ml/                         # ML training scripts
-│   ├── scripts/               # Training & evaluation
-│   ├── tests/                 # ML tests
-│   └── requirements.txt       # ML dependencies
-│
 ├── scripts/                    # Utility scripts
 │   ├── test_meralion.py       # Model testing
 │   └── test_pyannote.py       # Diarization testing
@@ -93,11 +88,6 @@ Hack-Roll/
 - Purpose: Custom React hooks
 - Contains: Recording logic, session status polling, audio playback
 - Key files: `useRecording.ts`, `useSessionStatus.ts`, `useAudioPlayback.ts`
-
-**ml/**
-- Purpose: ML model training and evaluation (separate from backend)
-- Contains: LoRA fine-tuning scripts, data preparation
-- Key files: `scripts/train_lora.py`, `scripts/evaluate.py`
 
 ## Key File Locations
 
