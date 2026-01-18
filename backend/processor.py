@@ -57,10 +57,8 @@ from services.transcription import (
     count_target_words,
     SAMPLE_RATE,
 )
-from services.transcription_cache import (
-    get_cached_transcriptions,
-    get_text_for_time_range,
-)
+# NOTE: Cache functions not used for word counting (chunk text contains mixed speakers)
+# from services.transcription_cache import get_cached_transcriptions, get_text_for_time_range
 
 logger = logging.getLogger(__name__)
 
@@ -339,9 +337,10 @@ async def transcribe_and_count(
     """
     Transcribe each segment and count target words per speaker.
 
-    OPTIMIZED: Uses cached chunk transcriptions when available,
-    falls back to direct transcription for uncached segments.
-    Parallelizes remaining transcription work.
+    NOTE: We always transcribe each speaker segment directly (not using chunk cache)
+    because chunk-level transcriptions contain mixed speaker text, which causes
+    incorrect word attribution. Each segment must be transcribed individually
+    for accurate per-speaker word counts.
 
     Args:
         audio_path: Path to full audio file
@@ -357,48 +356,15 @@ async def transcribe_and_count(
     )
 
     total_segments = len(segments)
-    session_id = session.id
 
-    # Get cached transcriptions
-    cached = get_cached_transcriptions(db, session_id)
-    chunks = db.query(AudioChunk).filter(
-        AudioChunk.session_id == session_id
-    ).order_by(AudioChunk.chunk_number).all()
+    # All segments need transcription for accurate word attribution
+    # (Chunk cache contains mixed-speaker text, not usable for per-speaker counts)
+    uncached_segments = list(segments)
 
-    logger.info(f"Found {len(cached)} cached chunk transcriptions")
+    logger.info(f"Transcribing {len(uncached_segments)} segments for accurate word counts")
 
-    # Separate segments into cached vs needs-transcription
-    cached_segments = []
-    uncached_segments = []
-
-    for segment in segments:
-        cached_text = get_text_for_time_range(
-            cached, chunks, segment.start_time, segment.end_time
-        )
-        if cached_text:
-            cached_segments.append((segment, cached_text))
-        else:
-            uncached_segments.append(segment)
-
-    logger.info(
-        f"Segments: {len(cached_segments)} from cache, "
-        f"{len(uncached_segments)} need transcription"
-    )
-
-    # Process cached segments (fast - just count words)
-    for i, (segment, text) in enumerate(cached_segments):
-        corrected = apply_corrections(text)
-        word_counts = count_target_words(corrected)
-
-        speaker_id = segment.speaker_id
-        for word, count in word_counts.items():
-            speaker_word_counts[speaker_id][word] += count
-
-        logger.debug(f"Cached segment ({speaker_id}): {word_counts}")
-
-    # Update progress for cached segments
-    cached_progress = len(cached_segments) * 100 // max(total_segments, 1)
-    update_progress(db, session, "transcribing", cached_progress)
+    # Start transcription progress at 0
+    update_progress(db, session, "transcribing", 0)
 
     # Transcribe uncached segments in parallel
     if uncached_segments:
@@ -450,7 +416,7 @@ async def transcribe_and_count(
                 speaker_word_counts[speaker_id][word] += count
 
             # Update progress
-            progress = (len(cached_segments) + i + 1) * 100 // total_segments
+            progress = (i + 1) * 100 // total_segments
             update_progress(db, session, "transcribing", progress)
 
     update_progress(db, session, "transcribing", 100)
