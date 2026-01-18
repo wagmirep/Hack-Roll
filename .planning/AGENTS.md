@@ -8,14 +8,13 @@
 
 ## Overview
 
-4 Claude agents working in parallel on the ML pipeline. Each agent has an isolated git worktree to avoid conflicts.
+3 Claude agents worked in parallel on the ML pipeline. Each agent had an isolated git worktree to avoid conflicts.
 
-| Agent | Branch | Worktree Directory | Focus |
-|-------|--------|-------------------|-------|
-| 1 | `diarization` | `Hack-Roll-diarization` | Speaker diarization service |
-| 2 | `transcription` | `Hack-Roll-transcription` | MERaLiON ASR wrapper |
-| 3 | `singlish-nlp` | `Hack-Roll-singlish-nlp` | Corrections + word counting |
-| 4 | `data-prep` | `Hack-Roll-data-prep` | Training data for fine-tuning |
+| Agent | Branch | Worktree Directory | Focus | Status |
+|-------|--------|-------------------|-------|--------|
+| 1 | `diarization` | `Hack-Roll-diarization` | Speaker diarization service | ✅ Complete |
+| 2 | `transcription` | `Hack-Roll-transcription` | MERaLiON ASR wrapper | ✅ Complete |
+| 3 | `singlish-nlp` | `Hack-Roll-singlish-nlp` | Corrections + word counting | ✅ Complete |
 
 ---
 
@@ -203,51 +202,6 @@ Agent 2 will create the base `transcription.py` with model code. Your correction
 
 ---
 
-## Agent 4: Data Preparation
-
-**Worktree:** `C:\Users\nicko\Desktop\wagmi\Hack-Roll-data-prep`
-**Branch:** `data-prep`
-
-### Scope
-Prepare training data for MERaLiON fine-tuning on Singlish vocabulary.
-
-### Files to Modify
-- `ml/scripts/prepare_singlish_data.py` — Data preparation script
-- `ml/scripts/filter_imda.py` — Filter IMDA corpus for Singlish samples
-- `ml/data/` — Output directory for processed data
-
-### Deliverables
-1. Script to filter IMDA National Speech Corpus for Singlish-heavy samples
-2. Script to prepare training data in format MERaLiON expects
-3. Data manifest files for fine-tuning
-
-### Technical Details
-```python
-# IMDA National Speech Corpus filtering criteria:
-# - Contains target Singlish words in transcript
-# - Clear audio quality (no heavy background noise)
-# - Speaker variety (multiple speakers, demographics)
-
-# Output format for fine-tuning:
-# - Audio: 16kHz mono WAV
-# - Transcripts: JSON with {audio_path, text, duration}
-```
-
-### Data Sources
-- IMDA National Speech Corpus: https://www.imda.gov.sg/how-we-can-help/national-speech-corpus
-- Singlish recordings (if available)
-
-### Success Criteria
-- [ ] Filter script identifies Singlish-heavy samples
-- [ ] Data manifest generated for fine-tuning
-- [ ] Audio files in correct format (16kHz mono)
-
-### Do NOT Touch
-- `backend/` files (other agents' domain)
-- Model inference code
-
----
-
 ## Merge Order & Integration
 
 ### Recommended Merge Sequence
@@ -255,7 +209,6 @@ Prepare training data for MERaLiON fine-tuning on Singlish vocabulary.
 1. **Merge Agent 2 (transcription) first** — Base model code
 2. **Merge Agent 3 (singlish-nlp) second** — Adds to transcription.py
 3. **Merge Agent 1 (diarization) third** — Independent service
-4. **Agent 4 (data-prep)** — Can merge anytime, independent
 
 ### After All Merges: Integration Task
 
@@ -305,13 +258,6 @@ claude
 cd C:\Users\nicko\Desktop\wagmi\Hack-Roll-singlish-nlp
 claude
 # Prompt: "Read .planning/AGENTS.md and implement Agent 3 (Singlish NLP)"
-```
-
-### Terminal 4 (Agent 4 - Data Prep)
-```bash
-cd C:\Users\nicko\Desktop\wagmi\Hack-Roll-data-prep
-claude
-# Prompt: "Read .planning/AGENTS.md and implement Agent 4 (Data Preparation)"
 ```
 
 ---

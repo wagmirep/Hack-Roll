@@ -1,28 +1,29 @@
 # LahStats ML Services — Roadmap
 
 **Milestone:** v1.1 — Performance Optimization
-**Status:** In Progress
+**Status:** Complete (Phase 5 done)
 
 ---
 
-## Phase 5: Batched Transcription 🚧
+## Phase 5: Batched Transcription ✅
 
 **Goal:** Reduce post-recording wait time from 60-120s to 5-10s
 
-**Status:** In Progress (1/2 plans complete)
+**Status:** Complete
 
 **Delivers:**
 - ✅ Background chunk transcription during recording (Plan 05-01)
-- ⏳ Cache-aware processor for fast post-processing (Plan 05-02)
+- ✅ Cache-aware processor for fast post-processing (Plan 05-02)
 
 **Key files:**
 - `backend/models.py` — ChunkTranscription model
 - `backend/services/transcription_cache.py` — Background transcription cache
 - `backend/routers/sessions.py` — Triggers background transcription on upload
+- `backend/processor.py` — Cache-aware transcription with parallel fallback
 
 **Plans:**
 - ✅ 05-01: Background Chunk Transcription
-- ⏳ 05-02: Fast Post-Processing
+- ✅ 05-02: Fast Post-Processing
 
 ---
 
@@ -135,12 +136,11 @@
 
 **Notes:**
 - All phases completed via parallel agent development
-- Fine-tuning data prep also complete (Agent 4): `ml/scripts/prepare_singlish_data.py`, `ml/scripts/filter_imda.py`
 - 95+ unit tests passing across backend and ML
 - **v1.0 ML Pipeline is feature-complete**
 
 ---
 
 *Created: 2026-01-17*
-*Updated: 2026-01-17 — All phases complete, v1.0 ML Pipeline done*
-*Milestone: v1.0*
+*Updated: 2026-01-18 — v1.1 Performance Optimization complete, batched transcription done*
+*Milestone: v1.1*

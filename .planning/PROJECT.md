@@ -15,18 +15,18 @@ ML pipeline for LahStats that handles speaker diarization and Singlish speech-to
 - ✓ Project structure scaffolded — existing
 - ✓ Codebase mapped — existing
 
-### Active
+### Complete
 
-- [ ] Speaker diarization service (pyannote/speaker-diarization-3.1)
-- [ ] ASR transcription service (MERaLiON-2-10B-ASR)
-- [ ] Post-processing corrections for Singlish words
-- [ ] Word counting for target Singlish vocabulary
-- [ ] Processing pipeline integration (processor.py)
-- [ ] Test scripts for model validation
+- [x] Speaker diarization service (pyannote/speaker-diarization-3.1)
+- [x] ASR transcription service (MERaLiON-2-10B-ASR)
+- [x] Post-processing corrections for Singlish words
+- [x] Word counting for target Singlish vocabulary
+- [x] Processing pipeline integration (processor.py)
+- [x] Test scripts for model validation
+- [x] Batched transcription for faster post-processing
 
 ### Out of Scope
 
-- Fine-tuning MERaLiON — doing separately, not in this scope
 - Backend API endpoints — Winston's responsibility
 - Mobile app — Harshith/Toshiki's responsibility
 - Firebase sync — Winston's responsibility
@@ -81,9 +81,10 @@ CORRECTIONS = {
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Use pre-trained MERaLiON | No time to fine-tune for hackathon, post-processing handles edge cases | — Pending |
-| Post-processing corrections | Cheaper than fine-tuning, handles known misrecognitions | — Pending |
-| Cache model instances | Avoid reloading 10B parameter model per request | — Pending |
+| Use pre-trained MERaLiON | Post-processing handles edge cases effectively | ✓ Implemented |
+| Post-processing corrections | Handles known misrecognitions without fine-tuning | ✓ Implemented |
+| Cache model instances | Avoid reloading 10B parameter model per request | ✓ Implemented |
+| Batched transcription | Transcribe chunks during recording for faster results | ✓ Implemented |
 
 ---
-*Last updated: 2026-01-17 after initialization*
+*Last updated: 2026-01-18*
