@@ -24,7 +24,7 @@ export function updateSessionCache(token: string, expiresAt: number) {
 
 export const axiosInstance: AxiosInstance = axios.create({
   baseURL: API_URL,
-  timeout: 5000, // Reduced to 5 seconds for faster feedback
+  timeout: 30000, // 30 seconds to handle Fly.io cold starts
   headers: {
     'Content-Type': 'application/json',
   },
