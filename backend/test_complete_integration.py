@@ -155,13 +155,19 @@ import asyncio
 with open(temp_wav_path, 'rb') as f:
     audio_bytes = f.read()
 
-# Upload chunk
+# Upload chunk - create a proper async mock for UploadFile
+class MockUploadFile:
+    def __init__(self, content, filename, content_type):
+        self._content = content
+        self.filename = filename
+        self.content_type = content_type
+
+    async def read(self):
+        return self._content
+
 async def upload_chunk():
-    storage_path = await storage.upload_chunk(session.id, 1, type('UploadFile', (), {
-        'file': type('File', (), {'read': lambda: audio_bytes})(),
-        'filename': 'chunk_1.wav',
-        'content_type': 'audio/wav'
-    })())
+    mock_file = MockUploadFile(audio_bytes, 'chunk_1.wav', 'audio/wav')
+    storage_path = await storage.upload_chunk(session.id, 1, mock_file)
     return storage_path
 
 storage_path = asyncio.run(upload_chunk())

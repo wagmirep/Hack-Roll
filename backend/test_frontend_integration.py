@@ -426,20 +426,20 @@ class IntegrationTest:
             if response.status_code == 200:
                 data = response.json()
                 
-                required_fields = ["session_id", "status", "users", "all_claimed"]
+                required_fields = ["session_id", "status", "speakers", "all_claimed"]
                 missing_fields = [f for f in required_fields if f not in data]
-                
+
                 if missing_fields:
                     print_error(f"Results missing fields: {missing_fields}")
                     return False
-                
+
                 print_success("Retrieved results")
-                print_info(f"Users: {len(data['users'])}")
+                print_info(f"Speakers: {len(data['speakers'])}")
                 print_info(f"All claimed: {data['all_claimed']}")
-                
-                for user in data['users']:
-                    username = user.get('username') or user.get('guest_name', 'Unknown')
-                    print_info(f"  - {username}: {user['total_words']} total words")
+
+                for speaker in data['speakers']:
+                    username = speaker.get('username') or speaker.get('guest_name', 'Unknown')
+                    print_info(f"  - {username}: {speaker['total_words']} total words")
                 
                 return True
             else:
