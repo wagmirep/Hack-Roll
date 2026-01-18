@@ -1,6 +1,6 @@
-# LahStats Backend API
+# Rabak Backend API
 
-FastAPI backend for LahStats - Singlish word tracking with speaker diarization.
+FastAPI backend for Rabak - Singlish word tracking with speaker diarization.
 
 ## Setup
 

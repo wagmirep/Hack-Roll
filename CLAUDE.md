@@ -1,4 +1,4 @@
-# CLAUDE.md — LahStats Project Instructions
+# CLAUDE.md — Rabak Project Instructions
 
 **Claude reads this file automatically. Keep it updated.**
 
@@ -6,21 +6,20 @@
 
 ## Project Overview
 
-**Name:** LahStats
+**Name:** Rabak
 
 **Description:** Singlish word tracking app with AI speaker recognition - one phone records everyone, automatically segments speakers, users claim their words, get Spotify Wrapped-style stats
 
 **Tagline:** "Track your lah, lor, and more"
 
 **Tech Stack:**
-- **Mobile App:** React Native + Expo
+- **Mobile App:** React Native + Expo (TypeScript)
 - **Backend API:** FastAPI (Python)
 - **ASR Model:** MERaLiON-2-10B-ASR (pre-trained, no fine-tuning)
 - **Speaker Diarization:** pyannote/speaker-diarization-3.1
-- **Database:** PostgreSQL (primary) + Firebase Realtime Database (live sync)
-- **Queue:** Redis (for job processing)
-- **Storage:** AWS S3 / Cloud Storage (audio files)
-- **Package Manager:** Bun (frontend tooling), pip (Python)
+- **Database:** Supabase (PostgreSQL + Auth)
+- **ML Processing:** Google Colab (offloaded for deployment)
+- **Package Manager:** npm/bun (frontend), pip (Python)
 
 ---
 
@@ -51,21 +50,11 @@ Weekly Wrapped: Spotify-style statistics visualization
 ### Key Technical Decisions
 
 1. **One-Phone Recording:** Natural UX - one phone on table records everyone, not multi-phone
-2. **No Voice Enrollment:** Too complex for hackathon, using claiming UI instead
+2. **No Voice Enrollment:** Using claiming UI instead
 3. **Pre-trained Models:** Using MERaLiON-2-10B-ASR as-is, no fine-tuning needed
 4. **Post-Processing:** Corrections dictionary handles edge cases (e.g., "while up" → "walao")
 5. **Claiming Flow:** After recording, users listen to 5s audio samples and click "That's me!"
-
----
-
-## Team
-
-| Name | Role | Responsibilities |
-|------|------|------------------|
-| Nickolas | ML | ASR integration, speaker diarization |
-| Winston | Backend | Backend API, Database, Firebase sync, processing pipeline |
-| Harshith | Mobile/Frontend | React Native app, recording, claiming UI, statistics visualization |
-| Toshiki | Mobile/Frontend | React Native app, recording, claiming UI, Spotify Wrapped UI |
+6. **Three-Way Claiming:** Users can claim as self, tag another user, or tag as guest
 
 ---
 
@@ -74,19 +63,19 @@ Weekly Wrapped: Spotify-style statistics visualization
 ### 1. Mobile App (React Native)
 
 **Screens:**
-- `RecordingScreen.js` - One-phone group recording with live duration
-- `ProcessingScreen.js` - Shows progress while AI processes audio
-- `ClaimingScreen.js` - Play samples, users click "That's me!"
-- `ResultsScreen.js` - Session results per user
-- `StatsScreen.js` - Weekly/monthly statistics
-- `WrappedScreen.js` - Spotify Wrapped-style yearly recap
+- `RecordingScreen.tsx` - One-phone group recording with pulsing animations
+- `ProcessingScreen.tsx` - Shows progress while AI processes audio
+- `ClaimingScreen.tsx` - Play samples, users click "That's me!"
+- `ResultsScreen.tsx` - Session results per user
+- `StatsScreen.tsx` - Weekly/monthly statistics
+- `WrappedScreen.tsx` - Spotify Wrapped-style yearly recap
 
 **Key Features:**
 - Audio recording at 16kHz, mono, WAV format
 - Chunk upload every 30 seconds
 - Real-time status polling during processing
 - Audio playback for claiming
-- Firebase listener for live group updates
+- Polished animations (pulsing circles, spinning logo)
 
 ### 2. Backend API (FastAPI)
 
@@ -100,6 +89,7 @@ GET    /sessions/{id}/status        # Poll processing progress
 GET    /sessions/{id}/speakers      # Get claiming data
 POST   /sessions/{id}/claim         # User claims speaker
 GET    /groups/{id}/stats           # Group statistics
+GET    /auth/search                 # Search users for tagging
 ```
 
 **Processing Pipeline:**
@@ -109,21 +99,21 @@ GET    /groups/{id}/stats           # Group statistics
 async def process_session(session_id):
     # 1. Concatenate audio chunks
     full_audio = concatenate_chunks(session_id)
-    
+
     # 2. Speaker diarization (pyannote)
     segments = diarization_pipeline(full_audio)
     # Output: [(0-5s: SPEAKER_00), (5-12s: SPEAKER_01), ...]
-    
+
     # 3. Transcribe each segment (MERaLiON)
     for segment in segments:
         text = transcriber(segment.audio)['text']
         corrected = apply_corrections(text)  # Post-processing
         words = count_target_words(corrected)
-        
+
     # 4. Generate claiming data
     # - Save 5s sample clip per speaker
     # - Aggregate word counts per speaker
-    
+
     # 5. Mark ready for claiming
 ```
 
@@ -135,7 +125,7 @@ async def process_session(session_id):
 - **Input:** 16kHz mono audio, max 30s chunks
 - **Output:** Text transcription
 - **Performance:** 85-90% accuracy on Singlish particles
-- **Usage:** Pre-trained, no fine-tuning for hackathon
+- **Usage:** Pre-trained, no fine-tuning
 
 **pyannote Speaker Diarization:**
 - **Model:** `pyannote/speaker-diarization-3.1`
@@ -150,29 +140,32 @@ async def process_session(session_id):
 CORRECTIONS = {
     'while up': 'walao',
     'wa lao': 'walao',
-    'cheap buy': 'cheebai',
-    'lunch hour': 'lanjiao',
+    'pie say': 'paiseh',
+    'a llama': 'alamak',
     'la': 'lah',
     'low': 'lor',
     # ... more corrections
 }
 
 TARGET_WORDS = [
-    'walao', 'cheebai', 'lanjiao',  # Vulgar
-    'lah', 'lor', 'sia', 'meh',      # Particles
-    'can', 'paiseh', 'shiok', 'sian' # Colloquial
+    # Particles
+    'lah', 'lor', 'sia', 'meh', 'leh', 'hor', 'ah',
+    # Expressions
+    'walao', 'alamak', 'aiyo', 'bojio',
+    # Colloquial
+    'can', 'paiseh', 'shiok', 'sian', 'bodoh', 'kiasu', 'kiasi'
 ]
 ```
 
 ### 4. Database Schema
 
-**PostgreSQL:**
+**Supabase (PostgreSQL):**
 
 ```sql
 -- Recording sessions
 CREATE TABLE sessions (
     id UUID PRIMARY KEY,
-    group_id UUID NOT NULL,
+    group_id UUID,  -- nullable for personal sessions
     started_by UUID NOT NULL,
     started_at TIMESTAMP NOT NULL,
     ended_at TIMESTAMP,
@@ -189,7 +182,10 @@ CREATE TABLE session_speakers (
     sample_audio_url TEXT,
     segment_count INT,
     claimed_by UUID,         -- NULL until claimed
-    claimed_at TIMESTAMP
+    claimed_at TIMESTAMP,
+    claim_type VARCHAR(20),  -- 'self', 'user', 'guest'
+    attributed_to_user_id UUID,
+    guest_name VARCHAR(100)
 );
 
 -- Final attributed word counts
@@ -197,69 +193,12 @@ CREATE TABLE word_counts (
     id BIGSERIAL PRIMARY KEY,
     session_id UUID NOT NULL,
     user_id UUID NOT NULL,
-    group_id UUID NOT NULL,
+    group_id UUID,  -- nullable for personal sessions
     word VARCHAR(50),
     count INT,
     detected_at TIMESTAMP DEFAULT NOW()
 );
 ```
-
-**Firebase Realtime Database:**
-
-```javascript
-{
-  "groups": {
-    "group-123": {
-      "live_counts": {
-        "user-jeff": {"walao": 10, "lah": 15},
-        "user-alice": {"sia": 8, "lor": 14}
-      },
-      "leaderboard": [...],
-      "active_session": "session-abc"
-    }
-  }
-}
-```
-
----
-
-## Implementation Roadmap
-
-### Hackathon Timeline (24 hours)
-
-**Hour 0-8: Core Backend**
-- ✅ FastAPI project setup
-- ✅ Session CRUD endpoints
-- ✅ Audio chunk upload + storage
-- ✅ PostgreSQL schema
-- ✅ Redis queue setup
-- ✅ pyannote integration test
-- ✅ MERaLiON integration test
-
-**Hour 8-16: Processing Pipeline**
-- ✅ Audio concatenation
-- ✅ Speaker diarization worker
-- ✅ Per-segment transcription
-- ✅ Post-processing corrections
-- ✅ Word counting logic
-- ✅ Sample audio generation
-- ✅ Claiming data structure
-
-**Hour 16-20: Mobile App**
-- ✅ React Native setup (Expo)
-- ✅ Recording screen + audio capture
-- ✅ Chunk upload logic
-- ✅ Processing status polling
-- ✅ Claiming UI with audio playback
-- ✅ Results visualization
-
-**Hour 20-24: Integration + Demo**
-- ✅ Firebase real-time sync
-- ✅ Statistics aggregation
-- ✅ Spotify Wrapped mockup
-- ✅ End-to-end testing
-- ✅ Demo video preparation
-- ✅ Pitch deck
 
 ---
 
@@ -279,12 +218,6 @@ uvicorn main:app --reload --port 8000
 
 # Run processing worker (separate terminal)
 python worker.py
-
-# Run Redis (Docker)
-docker run -d -p 6379:6379 redis:latest
-
-# Database migrations
-alembic upgrade head
 ```
 
 ### Mobile Development
@@ -292,16 +225,16 @@ alembic upgrade head
 ```bash
 # Setup
 cd mobile
-bun install  # or npm install if needed
+npm install  # or bun install
 
 # Run on iOS simulator
-bun run ios
+npm run ios
 
 # Run on Android emulator
-bun run android
+npm run android
 
 # Run on physical device (Expo Go)
-bun run start
+npm start
 # Scan QR code with Expo Go app
 ```
 
@@ -344,39 +277,29 @@ for turn, _, speaker in result.itertracks(yield_label=True):
 │   ├── processor.py            # Background processing worker
 │   ├── models.py               # Database models
 │   ├── database.py             # DB connection
-│   ├── storage.py              # S3/storage utils
+│   ├── storage.py              # Storage utils
+│   ├── services/
+│   │   ├── diarization.py      # Speaker segmentation
+│   │   └── transcription.py    # ASR + corrections
 │   └── requirements.txt
-│       ├── fastapi
-│       ├── uvicorn
-│       ├── transformers
-│       ├── torch
-│       ├── pyannote.audio
-│       ├── librosa
-│       ├── redis
-│       └── psycopg2
 │
 ├── mobile/
 │   ├── src/
 │   │   ├── screens/
-│   │   │   ├── RecordingScreen.js
-│   │   │   ├── ProcessingScreen.js
-│   │   │   ├── ClaimingScreen.js
-│   │   │   ├── ResultsScreen.js
-│   │   │   └── WrappedScreen.js
 │   │   ├── components/
 │   │   ├── hooks/
-│   │   ├── api/            # API client
+│   │   ├── api/
 │   │   └── utils/
 │   └── package.json
 │
 ├── docs/
-│   ├── API.md              # API documentation
-│   ├── MODELS.md           # Model usage guide
-│   └── DEPLOYMENT.md       # Deployment instructions
+│   ├── API.md
+│   ├── MODELS.md
+│   └── DEPLOYMENT.md
 │
-├── TASKS.md                # Task assignments
+├── TASKS.md
 ├── CLAUDE.md               # This file
-└── README.md               # Project README
+└── README.md
 ```
 
 ---
@@ -387,29 +310,20 @@ for turn, _, speaker in result.itertracks(yield_label=True):
 
 ```bash
 # Database
-DATABASE_URL=postgresql://user:pass@localhost:5432/lahstats
-
-# Redis
-REDIS_URL=redis://localhost:6379
-
-# Storage
-S3_BUCKET=lahstats-audio
-AWS_ACCESS_KEY_ID=your-key
-AWS_SECRET_ACCESS_KEY=your-secret
+DATABASE_URL=postgresql://...supabase.co:5432/postgres
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-anon-key
 
 # Models
 HUGGINGFACE_TOKEN=your-hf-token  # For pyannote
-
-# Firebase
-FIREBASE_PROJECT_ID=lahstats
-FIREBASE_CREDENTIALS=path/to/credentials.json
 ```
 
 ### Mobile (.env)
 
 ```bash
-API_URL=http://localhost:8000
-FIREBASE_CONFIG=your-firebase-config-json
+EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+EXPO_PUBLIC_API_URL=http://localhost:8000
 ```
 
 ---
@@ -420,22 +334,17 @@ FIREBASE_CONFIG=your-firebase-config-json
 |-----------|----------|
 | **Overlapping speech** | Ignore segments with multiple speakers detected |
 | **Background noise** | Require quiet recording environment |
-| **Vulgar word accuracy** | Post-processing corrections dictionary |
+| **Word accuracy** | Post-processing corrections dictionary |
 | **Speaker confusion** | 5-second audio samples help users identify |
 | **Processing time** | Show progress bar, 2-3 min typical processing |
-| **Real-time updates** | Firebase listeners for live group sync |
+| **GPU requirements** | Offload ML processing to Google Colab |
 
 ---
 
 ## Demo Script
 
-**Setup (Pre-recorded):**
-- 3-minute conversation with clear Singlish usage
-- Multiple speakers
-- Pre-processed results ready
-
 **Live Demo:**
-1. "We're LahStats - Spotify Wrapped for Singlish"
+1. "We're Rabak - Spotify Wrapped for Singlish"
 2. [Show recording screen] "One phone records everyone"
 3. [Play 30s of conversation]
 4. "AI automatically figures out who spoke when"
@@ -447,62 +356,15 @@ FIREBASE_CONFIG=your-firebase-config-json
 
 ---
 
-## Testing Checklist
-
-### Backend
-- [ ] Audio upload works
-- [ ] Session status updates correctly
-- [ ] Diarization segments speakers
-- [ ] MERaLiON transcribes Singlish
-- [ ] Post-processing applies corrections
-- [ ] Word counting accurate
-- [ ] Claiming attribution works
-- [ ] Firebase sync updates in real-time
-
-### Mobile
-- [ ] Recording captures 16kHz mono audio
-- [ ] Chunks upload every 30s
-- [ ] Processing screen polls status
-- [ ] Audio samples play correctly
-- [ ] Claiming works (one click per speaker)
-- [ ] Results display per user
-- [ ] Navigation flows smoothly
-
-### Integration
-- [ ] End-to-end: Record → Process → Claim → Results
-- [ ] Multiple users can claim different speakers
-- [ ] Word counts accurate across group
-- [ ] Firebase updates all group members
-
----
-
-## Known Limitations (Post-Hackathon TODO)
-
-- [ ] Speaker diarization accuracy ~85% (not perfect)
-- [ ] No voice enrollment (manual claiming required)
-- [ ] 30s chunk upload (not true real-time)
-- [ ] Post-processing only covers common misspellings
-- [ ] No support for overlapping speech
-- [ ] Requires relatively quiet environment
-
-**Post-hackathon improvements:**
-1. Add voice enrollment for automatic attribution
-2. Real-time word detection (no claiming needed)
-3. Better noise handling
-4. Support for longer sessions (>30 min)
-
----
-
 ## Common Issues
 
 | Problem | Solution |
 |---------|----------|
 | pyannote auth error | Set `HUGGINGFACE_TOKEN` in `.env` |
-| MERaLiON OOM | Reduce batch size or use smaller model |
+| MERaLiON OOM | Reduce batch size or use Colab |
 | Poor diarization | Check audio quality, reduce background noise |
-| Slow processing | Use GPU for both models, Redis queue |
+| Slow processing | Use GPU, or offload to Colab |
 | Claiming not working | Verify sample audio URLs accessible from mobile |
-| Firebase not syncing | Check Firebase credentials and rules |
 
 ---
 
@@ -511,37 +373,32 @@ FIREBASE_CONFIG=your-firebase-config-json
 **Models:**
 - MERaLiON-2-10B-ASR: https://huggingface.co/MERaLiON/MERaLiON-2-10B-ASR
 - pyannote diarization: https://huggingface.co/pyannote/speaker-diarization-3.1
-- IMDA National Speech Corpus: https://www.imda.gov.sg/how-we-can-help/national-speech-corpus
 
 **Documentation:**
 - FastAPI: https://fastapi.tiangolo.com/
 - React Native: https://reactnative.dev/
 - Expo: https://docs.expo.dev/
-- Firebase: https://firebase.google.com/docs
+- Supabase: https://supabase.com/docs
 
 **Research Papers:**
 - MERaLiON-AudioLLM: https://arxiv.org/abs/2412.09818
-- Singlish Understanding: https://arxiv.org/abs/2501.01034
 
 ---
 
-*Last updated: January 15, 2026*
+*Last updated: January 18, 2026*
 
 ---
 
 **Quick Commands:**
 
 ```bash
-# Start everything
-docker-compose up -d          # Redis + PostgreSQL
-python backend/main.py        # API server
-python backend/worker.py      # Processing worker
-cd mobile && bun run start    # Mobile app
+# Start backend
+cd backend && uvicorn main:app --reload --port 8000
+
+# Start mobile
+cd mobile && npm start
 
 # Test models
 python scripts/test_meralion.py
 python scripts/test_pyannote.py
-
-# Deploy
-./deploy.sh
 ```
