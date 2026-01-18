@@ -1,0 +1,49 @@
+# .dockerignore - Files to exclude from Docker build
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.venv/
+
+# Environment
+.env
+.env.local
+*.env
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+test_*.py
+
+# Documentation
+*.md
+!README.md
+
+# Misc
+*.log
+.DS_Store
+Thumbs.db
+nul
+
+# Notebooks (not needed in prod)
+notebooks/
+
+# Test audio files
+test_audio/

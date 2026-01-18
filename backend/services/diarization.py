@@ -2,11 +2,13 @@
 services/diarization.py - Speaker Diarization Service
 
 PURPOSE:
-    Wrapper service for pyannote speaker diarization model.
+    Wrapper service for speaker diarization.
+    Supports external API (Colab) or local pyannote model.
     Segments audio into speaker-attributed time ranges.
 
 RESPONSIBILITIES:
-    - Load pyannote/speaker-diarization-3.1 model
+    - Call external diarization API if configured (DIARIZATION_API_URL)
+    - Fall back to local pyannote/speaker-diarization-3.1 model
     - Process audio files to identify speakers
     - Return time-stamped speaker segments
     - Handle overlapping speech detection
@@ -16,14 +18,16 @@ REFERENCED BY:
     - processor.py - Called during session processing
 
 REFERENCES:
-    - config.py - HUGGINGFACE_TOKEN for model authentication
+    - config.py - DIARIZATION_API_URL, HUGGINGFACE_TOKEN
     - storage.py - Audio file access
 
-MODEL:
-    pyannote/speaker-diarization-3.1
-    - Input: Audio file path (16kHz mono recommended)
-    - Output: List of (start_time, end_time, speaker_id) tuples
-    - Authentication: Requires HuggingFace token
+SETUP:
+    For external API (recommended for deployment):
+        Set DIARIZATION_API_URL to your Colab ngrok URL.
+        Example: DIARIZATION_API_URL=https://xxxx-xxx.ngrok.io
+
+    For local model (development):
+        Set HUGGINGFACE_TOKEN and ensure GPU available.
 
 EXPECTED ACCURACY:
     85-90% in good acoustic conditions
@@ -31,13 +35,36 @@ EXPECTED ACCURACY:
 """
 
 import os
+import io
+import base64
 import logging
 from dataclasses import dataclass
 from typing import List, Optional
 from threading import Lock
 
+import httpx
+
 # Initialize logger FIRST - before any code that might use it
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# EXTERNAL API DIARIZATION (Colab notebook)
+# =============================================================================
+
+def _get_diarization_api_url() -> Optional[str]:
+    """Get external diarization API URL from config."""
+    try:
+        from config import settings
+        return settings.DIARIZATION_API_URL
+    except Exception:
+        return os.getenv("DIARIZATION_API_URL")
+
+
+def is_using_external_api() -> bool:
+    """Check if external diarization API is configured."""
+    url = _get_diarization_api_url()
+    return url is not None and len(url) > 0
 
 # =============================================================================
 # PyTorch 2.6+ COMPATIBILITY FIX
@@ -260,9 +287,155 @@ def get_diarization_pipeline():
             raise RuntimeError(f"Failed to load diarization model: {e}")
 
 
+def _diarize_via_external_api(audio_path: str, min_segment_duration: float = 0.5) -> List[SpeakerSegment]:
+    """
+    Run diarization via external API (Colab notebook).
+
+    Args:
+        audio_path: Path to the audio file
+        min_segment_duration: Minimum segment duration in seconds
+
+    Returns:
+        List of SpeakerSegment objects sorted by start time
+    """
+    api_url = _get_diarization_api_url()
+    if not api_url:
+        raise RuntimeError("DIARIZATION_API_URL not configured")
+
+    diarize_endpoint = f"{api_url.rstrip('/')}/diarize"
+
+    logger.info(f"Diarizing audio via external API: {audio_path}")
+
+    try:
+        # Read audio file and encode as base64
+        with open(audio_path, "rb") as f:
+            audio_bytes = f.read()
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+        # Call API with generous timeout (diarization can be slow)
+        with httpx.Client(timeout=300.0) as client:
+            response = client.post(
+                diarize_endpoint,
+                json={"audio": audio_b64},
+                headers={"Content-Type": "application/json"}
+            )
+
+        if response.status_code == 503:
+            error_data = response.json()
+            raise RuntimeError(f"Diarization not available on server: {error_data.get('error', 'Unknown')}")
+
+        if response.status_code != 200:
+            error_msg = response.text[:500] if response.text else "Unknown error"
+            raise RuntimeError(f"API returned {response.status_code}: {error_msg}")
+
+        result = response.json()
+
+        # Convert API response to SpeakerSegment objects
+        # API returns: {"segments": [...], "speakers": [...], "num_speakers": N}
+        segments = []
+        for seg in result.get("segments", []):
+            duration = seg["end_time"] - seg["start_time"]
+
+            # Skip very short segments
+            if duration < min_segment_duration:
+                continue
+
+            segment = SpeakerSegment(
+                speaker_id=seg["speaker_id"],
+                start_time=seg["start_time"],
+                end_time=seg["end_time"]
+            )
+            segments.append(segment)
+
+        # Sort by start time
+        segments.sort(key=lambda s: s.start_time)
+
+        unique_speakers = set(s.speaker_id for s in segments)
+        logger.info(
+            f"External API diarization complete: {len(segments)} segments, "
+            f"{len(unique_speakers)} speakers detected"
+        )
+
+        return segments
+
+    except httpx.TimeoutException:
+        raise RuntimeError(f"External diarization API timed out: {diarize_endpoint}")
+    except httpx.RequestError as e:
+        raise RuntimeError(f"External diarization API request failed: {e}")
+
+
+def _diarize_via_local_model(audio_path: str, min_segment_duration: float = 0.5) -> List[SpeakerSegment]:
+    """
+    Run diarization using local pyannote model.
+
+    Args:
+        audio_path: Path to the audio file (16kHz mono WAV recommended)
+        min_segment_duration: Minimum segment duration in seconds (default 0.5s)
+
+    Returns:
+        List of SpeakerSegment objects sorted by start time
+    """
+    pipeline = get_diarization_pipeline()
+
+    # Preload audio with soundfile to bypass torchcodec requirement on Windows
+    # pyannote 4.x accepts {'waveform': tensor, 'sample_rate': int} format
+    audio_data, sample_rate = sf.read(audio_path)
+
+    # Convert to torch tensor: (channels, samples) format
+    if audio_data.ndim == 1:
+        # Mono audio - add channel dimension
+        waveform = torch.from_numpy(audio_data).float().unsqueeze(0)
+    else:
+        # Multi-channel - transpose to (channels, samples)
+        waveform = torch.from_numpy(audio_data.T).float()
+
+    # Create audio input dict for pyannote
+    audio_input = {"waveform": waveform, "sample_rate": sample_rate}
+
+    logger.info(f"Audio loaded: {waveform.shape}, {sample_rate}Hz")
+
+    # Run diarization with preloaded audio
+    diarization_result = pipeline(audio_input)
+
+    # Convert to SpeakerSegment objects
+    # pyannote 4.x returns DiarizeOutput, access speaker_diarization Annotation
+    annotation = getattr(diarization_result, 'speaker_diarization', diarization_result)
+
+    segments = []
+    for turn, _, speaker in annotation.itertracks(yield_label=True):
+        duration = turn.end - turn.start
+
+        # Skip very short segments (likely noise)
+        if duration < min_segment_duration:
+            logger.debug(f"Skipping short segment: {speaker} ({duration:.2f}s)")
+            continue
+
+        segment = SpeakerSegment(
+            speaker_id=speaker,
+            start_time=round(turn.start, 3),
+            end_time=round(turn.end, 3)
+        )
+        segments.append(segment)
+
+    # Sort by start time
+    segments.sort(key=lambda s: s.start_time)
+
+    # Log summary
+    unique_speakers = set(s.speaker_id for s in segments)
+    logger.info(
+        f"Local diarization complete: {len(segments)} segments, "
+        f"{len(unique_speakers)} speakers detected"
+    )
+
+    return segments
+
+
 def diarize_audio(audio_path: str, min_segment_duration: float = 0.5) -> List[SpeakerSegment]:
     """
     Run speaker diarization on an audio file.
+
+    Uses external API if DIARIZATION_API_URL is configured,
+    otherwise falls back to local pyannote model.
 
     Args:
         audio_path: Path to the audio file (16kHz mono WAV recommended)
@@ -281,59 +454,14 @@ def diarize_audio(audio_path: str, min_segment_duration: float = 0.5) -> List[Sp
     logger.info(f"Running diarization on: {audio_path}")
 
     try:
-        pipeline = get_diarization_pipeline()
+        # Use external API if configured
+        if is_using_external_api():
+            logger.info("Using external diarization API")
+            return _diarize_via_external_api(audio_path, min_segment_duration)
 
-        # Preload audio with soundfile to bypass torchcodec requirement on Windows
-        # pyannote 4.x accepts {'waveform': tensor, 'sample_rate': int} format
-        audio_data, sample_rate = sf.read(audio_path)
-
-        # Convert to torch tensor: (channels, samples) format
-        if audio_data.ndim == 1:
-            # Mono audio - add channel dimension
-            waveform = torch.from_numpy(audio_data).float().unsqueeze(0)
-        else:
-            # Multi-channel - transpose to (channels, samples)
-            waveform = torch.from_numpy(audio_data.T).float()
-
-        # Create audio input dict for pyannote
-        audio_input = {"waveform": waveform, "sample_rate": sample_rate}
-
-        logger.info(f"Audio loaded: {waveform.shape}, {sample_rate}Hz")
-
-        # Run diarization with preloaded audio
-        diarization_result = pipeline(audio_input)
-
-        # Convert to SpeakerSegment objects
-        # pyannote 4.x returns DiarizeOutput, access speaker_diarization Annotation
-        annotation = getattr(diarization_result, 'speaker_diarization', diarization_result)
-
-        segments = []
-        for turn, _, speaker in annotation.itertracks(yield_label=True):
-            duration = turn.end - turn.start
-
-            # Skip very short segments (likely noise)
-            if duration < min_segment_duration:
-                logger.debug(f"Skipping short segment: {speaker} ({duration:.2f}s)")
-                continue
-
-            segment = SpeakerSegment(
-                speaker_id=speaker,
-                start_time=round(turn.start, 3),
-                end_time=round(turn.end, 3)
-            )
-            segments.append(segment)
-
-        # Sort by start time
-        segments.sort(key=lambda s: s.start_time)
-
-        # Log summary
-        unique_speakers = set(s.speaker_id for s in segments)
-        logger.info(
-            f"Diarization complete: {len(segments)} segments, "
-            f"{len(unique_speakers)} speakers detected"
-        )
-
-        return segments
+        # Fall back to local model
+        logger.info("Using local pyannote model")
+        return _diarize_via_local_model(audio_path, min_segment_duration)
 
     except Exception as e:
         logger.error(f"Diarization failed: {e}")

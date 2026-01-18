@@ -134,3 +134,4 @@ Thumbs.db
 .docker/
 .ngrok_token
 backend/notebooks/test_transcription.ipynb
+nul
