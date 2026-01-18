@@ -3,7 +3,7 @@
 # LahStats Backend deployment config.
 # Secrets managed via: fly secrets set KEY=value
 
-app = "lahstats-backend"
+app = "lahstats-backend-wy"
 primary_region = "iad"
 
 [build]
