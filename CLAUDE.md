@@ -62,7 +62,7 @@ Weekly Wrapped: Spotify-style statistics visualization
 
 | Name | Role | Responsibilities |
 |------|------|------------------|
-| Nickolas | ML | ASR integration, speaker diarization, fine-tuning |
+| Nickolas | ML | ASR integration, speaker diarization |
 | Winston | Backend | Backend API, Database, Firebase sync, processing pipeline |
 | Harshith | Mobile/Frontend | React Native app, recording, claiming UI, statistics visualization |
 | Toshiki | Mobile/Frontend | React Native app, recording, claiming UI, Spotify Wrapped UI |
@@ -224,23 +224,6 @@ CREATE TABLE word_counts (
 ---
 
 ## Implementation Roadmap
-
-### Pre-Hackathon (Optional: 3-4 days)
-
-**NO FINE-TUNING NEEDED FOR HACKATHON!**
-
-We're using MERaLiON-2-10B-ASR as-is. If you want to specialize it for even better accuracy post-hackathon:
-
-```python
-# Optional: LoRA fine-tuning on pure Singlish data
-# 1. Filter IMDA dataset for Singlish-heavy samples
-# 2. Train LoRA adapters (5-10 hours of data)
-# 3. Expected gain: +5-10% accuracy on vulgar slang
-# Timeline: 3-4 days
-# Cost: $5-50 GPU rental
-```
-
-**For hackathon: Skip fine-tuning, use pre-trained + post-processing!**
 
 ### Hackathon Timeline (24 hours)
 
@@ -504,10 +487,9 @@ FIREBASE_CONFIG=your-firebase-config-json
 
 **Post-hackathon improvements:**
 1. Add voice enrollment for automatic attribution
-2. Fine-tune MERaLiON on more vulgar Singlish corpus
-3. Real-time word detection (no claiming needed)
-4. Better noise handling
-5. Support for longer sessions (>30 min)
+2. Real-time word detection (no claiming needed)
+3. Better noise handling
+4. Support for longer sessions (>30 min)
 
 ---
 

@@ -305,14 +305,12 @@ try:
     
     # Check transcription
     from services.transcription import (
-        MODEL_NAME as TRANSCRIPTION_MODEL,
         SAMPLE_RATE,
-        is_model_loaded
+        is_using_external_api
     )
     print(f"✅ Transcription service imports")
-    print(f"   Model: {TRANSCRIPTION_MODEL}")
     print(f"   Sample rate: {SAMPLE_RATE}Hz")
-    print(f"   Model loaded: {is_model_loaded()}")
+    print(f"   Using external API: {is_using_external_api()}")
     
     # Check processor
     from processor import (
