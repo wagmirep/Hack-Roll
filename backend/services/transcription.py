@@ -1,13 +1,12 @@
 """
-services/transcription.py - MERaLiON Transcription Service
+services/transcription.py - Transcription Service (External API)
 
-Wrapper service for MERaLiON ASR speech-to-text model.
-Transcribes Singlish audio segments to text.
+Calls external MERaLiON transcription API (Colab notebook via ngrok).
+Applies Singlish-specific corrections and counts target words.
 
-OPTIMIZATION: Uses MERaLiON-2-3B (lightweight) instead of 10B for faster CPU inference.
-- 3B params vs 10B = ~3x smaller, ~3-4x faster on CPU
-- Singlish WER: 18% (vs 12% for 10B-ASR) - acceptable for hackathon
-- Added INT8 dynamic quantization for additional CPU speedup
+SETUP:
+    Set TRANSCRIPTION_API_URL environment variable to your Colab ngrok URL.
+    Example: TRANSCRIPTION_API_URL=https://xxxx-xxx.ngrok.io
 """
 
 import os
@@ -16,420 +15,16 @@ import io
 import base64
 import logging
 from typing import Dict, Optional, Tuple
-from threading import Lock
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# MODEL CONFIGURATION
+# CONFIGURATION
 # =============================================================================
 
-# Use lightweight 3B model for faster CPU inference
-# Trade-off: ~6% more errors but 3-4x faster
-MODEL_NAME = "MERaLiON/MERaLiON-2-3B"
-SAMPLE_RATE = 16000  # Expected input sample rate
-
-# CPU Optimization settings
-ENABLE_QUANTIZATION = True  # INT8 dynamic quantization for CPU
-ENABLE_TORCH_COMPILE = True  # torch.compile() for faster inference
-NUM_THREADS = None  # None = auto-detect, or set specific number
-
-# =============================================================================
-# MODEL SINGLETON
-# =============================================================================
-
-_model = None
-_processor = None
-_model_lock = Lock()
-
-# Backward compatibility alias for tests
-_transcriber = None  # Will be set to (model, processor) tuple when loaded
-
-
-def _optimize_for_cpu(model):
-    """
-    Apply CPU-specific optimizations to the model.
-
-    - Dynamic INT8 quantization (2x speedup on CPU)
-    - torch.compile() if available (10-30% speedup)
-    - Thread optimization
-    """
-    import torch
-
-    # Set optimal thread count
-    if NUM_THREADS:
-        torch.set_num_threads(NUM_THREADS)
-    else:
-        # Use all available cores
-        import multiprocessing
-        cores = multiprocessing.cpu_count()
-        torch.set_num_threads(cores)
-        logger.info(f"Set torch threads to {cores}")
-
-    # Enable torch inference optimizations
-    torch.set_grad_enabled(False)
-
-    # Apply INT8 dynamic quantization for CPU
-    if ENABLE_QUANTIZATION:
-        try:
-            logger.info("Applying INT8 dynamic quantization for CPU...")
-            model = torch.quantization.quantize_dynamic(
-                model,
-                {torch.nn.Linear},  # Quantize linear layers
-                dtype=torch.qint8
-            )
-            logger.info("INT8 quantization applied successfully")
-        except Exception as e:
-            logger.warning(f"Quantization failed, using unquantized model: {e}")
-
-    # Apply torch.compile() for additional speedup
-    if ENABLE_TORCH_COMPILE:
-        try:
-            if hasattr(torch, 'compile'):
-                logger.info("Applying torch.compile() optimization...")
-                model = torch.compile(model, mode="reduce-overhead")
-                logger.info("torch.compile() applied successfully")
-        except Exception as e:
-            logger.warning(f"torch.compile() failed, using uncompiled model: {e}")
-
-    return model
-
-
-def get_transcriber():
-    """
-    Get or create the MERaLiON model and processor instances.
-
-    Uses singleton pattern to avoid reloading the model.
-    Thread-safe initialization.
-
-    Returns:
-        tuple: (model, processor) instances
-
-    Raises:
-        RuntimeError: If model fails to load
-    """
-    global _model, _processor
-
-    if _model is not None and _processor is not None:
-        return _model, _processor
-
-    with _model_lock:
-        # Double-check after acquiring lock
-        if _model is not None and _processor is not None:
-            return _model, _processor
-
-        logger.info(f"Loading MERaLiON ASR model: {MODEL_NAME}")
-
-        try:
-            from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
-            import torch
-
-            # Load processor
-            _processor = AutoProcessor.from_pretrained(
-                MODEL_NAME,
-                trust_remote_code=True
-            )
-
-            # Check for GPU
-            if torch.cuda.is_available():
-                total_mem_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-                logger.info(f"GPU available: {total_mem_gb:.1f}GB")
-
-                # 3B model fits easily on most GPUs
-                _model = AutoModelForSpeechSeq2Seq.from_pretrained(
-                    MODEL_NAME,
-                    torch_dtype=torch.float16,
-                    trust_remote_code=True,
-                    attn_implementation="eager",
-                ).to("cuda")
-                logger.info("Model loaded on GPU (float16)")
-            else:
-                logger.info("No GPU available, loading for CPU inference...")
-
-                # Load in float32 for CPU (required for quantization)
-                _model = AutoModelForSpeechSeq2Seq.from_pretrained(
-                    MODEL_NAME,
-                    torch_dtype=torch.float32,
-                    trust_remote_code=True,
-                    attn_implementation="eager",
-                )
-
-                # Apply CPU optimizations
-                _model = _optimize_for_cpu(_model)
-                logger.info("Model loaded on CPU with optimizations")
-
-            # Set to eval mode
-            _model.eval()
-
-            logger.info("MERaLiON model loaded successfully")
-            return _model, _processor
-
-        except Exception as e:
-            logger.error(f"Failed to load MERaLiON model: {e}")
-            raise RuntimeError(f"Failed to load transcription model: {e}") from e
-
-
-def _clean_model_output(text: str) -> str:
-    """
-    Clean raw model output by removing prompt templates and artifacts.
-
-    MERaLiON outputs include the chat template, speaker markers, and
-    sometimes bracketed words that need to be cleaned before processing.
-
-    Args:
-        text: Raw model output
-
-    Returns:
-        Cleaned transcription text
-    """
-    if not text:
-        return text
-
-    result = text
-
-    # Remove everything up to and including "model\n" (chat template prefix)
-    if "model\n" in result:
-        result = result.split("model\n", 1)[-1]
-
-    # Remove speaker markers like <Speaker1>:, <Speaker2>:, etc.
-    result = re.sub(r'<Speaker\d+>:\s*', '', result)
-
-    # Remove <SpeechHere> tags
-    result = re.sub(r'<SpeechHere>', '', result)
-
-    # Clean bracketed words: !(walao)! -> walao, (lah) -> lah
-    result = re.sub(r'!\(([^)]+)\)!', r'\1', result)  # !(word)! -> word
-    result = re.sub(r'\(([a-zA-Z]+)\)', r'\1', result)  # (word) -> word
-
-    # Remove filler markers
-    result = re.sub(r'\(err\)', '', result, flags=re.IGNORECASE)
-    result = re.sub(r'\(uh\)', '', result, flags=re.IGNORECASE)
-    result = re.sub(r'\(um\)', '', result, flags=re.IGNORECASE)
-
-    # Clean up extra whitespace
-    result = re.sub(r'\s+', ' ', result).strip()
-
-    return result
-
-
-def _transcribe_audio_array(audio_data, sample_rate: int = SAMPLE_RATE) -> str:
-    """
-    Internal function to transcribe audio array using model directly.
-
-    Args:
-        audio_data: numpy array of audio samples
-        sample_rate: Sample rate of the audio
-
-    Returns:
-        Transcription text
-    """
-    import torch
-    import numpy as np
-
-    model, processor = get_transcriber()
-
-    # Ensure float32 numpy array
-    if not isinstance(audio_data, np.ndarray):
-        audio_data = np.array(audio_data)
-    audio_data = audio_data.astype(np.float32)
-
-    # MERaLiON uses a chat-style interface with prompt template
-    prompt_template = "Instruction: {query} \nFollow the text instruction based on the following audio: <SpeechHere>"
-    # Use detailed Singlish-optimized prompt (same as Colab notebook) for better accuracy
-    transcribe_prompt = """Transcribe this Singlish speech using romanized text only. 
-Do NOT use Chinese characters. 
-Write Singlish words in romanized form: walao, shiok, lah, leh, lor, sia, paiseh, sian, etc.
-Output format: Speaker labels with romanized transcription."""
-
-    conversation = [[{"role": "user", "content": prompt_template.format(query=transcribe_prompt)}]]
-    chat_prompt = processor.tokenizer.apply_chat_template(
-        conversation=conversation,
-        tokenize=False,
-        add_generation_prompt=True
-    )
-
-    # Process audio through processor
-    inputs = processor(text=chat_prompt, audios=[audio_data])
-
-    # Move inputs to model device and dtype
-    device = next(model.parameters()).device
-    dtype = next(model.parameters()).dtype
-
-    def move_to_device(v):
-        if not hasattr(v, 'to'):
-            return v
-        v = v.to(device)
-        # Only convert floating point tensors to model dtype
-        if v.is_floating_point() and dtype in [torch.float16, torch.bfloat16]:
-            v = v.to(dtype)
-        return v
-
-    inputs = {k: move_to_device(v) for k, v in inputs.items()}
-
-    # Generate transcription with inference mode for speed
-    with torch.inference_mode():
-        generated_ids = model.generate(
-            **inputs,
-            max_new_tokens=256,
-            do_sample=False,  # Greedy decoding is faster
-        )
-
-    # Decode - skip the input tokens
-    input_len = inputs['input_ids'].size(1)
-    generated_ids = generated_ids[:, input_len:]
-    transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-
-    # Clean model output artifacts
-    transcription = _clean_model_output(transcription)
-
-    return transcription.strip()
-
-
-def transcribe_audio(audio_path: str) -> str:
-    """
-    Transcribe audio file to text using MERaLiON ASR.
-
-    If TRANSCRIPTION_API_URL is set, calls the external API (Colab notebook).
-    Otherwise, uses the local model.
-
-    Args:
-        audio_path: Path to audio file (16kHz mono WAV recommended)
-
-    Returns:
-        Raw transcription text
-
-    Raises:
-        FileNotFoundError: If audio file doesn't exist
-        RuntimeError: If transcription fails
-    """
-    if not os.path.exists(audio_path):
-        raise FileNotFoundError(f"Audio file not found: {audio_path}")
-
-    logger.info(f"Transcribing audio: {audio_path}")
-
-    # Use external API if configured
-    if is_using_external_api():
-        logger.info("Using external transcription API")
-        return _transcribe_via_external_api(audio_path)
-
-    # Otherwise use local model
-    try:
-        import librosa
-        import time
-
-        # Load audio file
-        start = time.time()
-        audio_data, sr = librosa.load(audio_path, sr=SAMPLE_RATE)
-        load_time = time.time() - start
-
-        # Transcribe
-        start = time.time()
-        text = _transcribe_audio_array(audio_data, SAMPLE_RATE)
-        transcribe_time = time.time() - start
-
-        audio_duration = len(audio_data) / SAMPLE_RATE
-        logger.info(f"Transcription complete: {len(text)} chars")
-        logger.info(f"  Audio: {audio_duration:.1f}s, Load: {load_time:.1f}s, Transcribe: {transcribe_time:.1f}s")
-        logger.info(f"  Real-time factor: {transcribe_time / audio_duration:.2f}x")
-
-        return text
-
-    except Exception as e:
-        logger.error(f"Transcription failed for {audio_path}: {e}")
-        raise RuntimeError(f"Transcription failed: {e}") from e
-
-
-def transcribe_segment(audio_bytes: bytes, sample_rate: int = SAMPLE_RATE) -> str:
-    """
-    Transcribe audio bytes directly without saving to file.
-
-    If TRANSCRIPTION_API_URL is set, calls the external API (Colab notebook).
-    Otherwise, uses the local model.
-
-    Args:
-        audio_bytes: Raw audio data
-        sample_rate: Sample rate of the audio (default: 16000)
-
-    Returns:
-        Raw transcription text
-
-    Raises:
-        RuntimeError: If transcription fails
-    """
-    # Use external API if configured
-    if is_using_external_api():
-        return _transcribe_segment_via_external_api(audio_bytes)
-
-    # Otherwise use local model
-    import numpy as np
-
-    try:
-        import soundfile as sf
-
-        # Read audio bytes
-        audio_data, sr = sf.read(io.BytesIO(audio_bytes))
-
-        # Ensure mono
-        if len(audio_data.shape) > 1:
-            audio_data = audio_data.mean(axis=1)
-
-        # Resample if needed
-        if sr != sample_rate:
-            import librosa
-            audio_data = librosa.resample(audio_data, orig_sr=sr, target_sr=sample_rate)
-
-        text = _transcribe_audio_array(audio_data, sample_rate)
-
-        return text.strip()
-
-    except Exception as e:
-        logger.error(f"Segment transcription failed: {e}")
-        raise RuntimeError(f"Segment transcription failed: {e}") from e
-
-
-def is_model_loaded() -> bool:
-    """Check if the transcription model is currently loaded."""
-    # Check both new API (_model, _processor) and legacy _transcriber
-    return (_model is not None and _processor is not None) or _transcriber is not None
-
-
-def unload_model() -> None:
-    """
-    Unload the transcription model to free memory.
-
-    Useful for testing or when switching between models.
-    """
-    global _model, _processor, _transcriber
-
-    with _model_lock:
-        if _model is not None or _transcriber is not None:
-            logger.info("Unloading MERaLiON model")
-            if _model is not None:
-                del _model
-            if _processor is not None:
-                del _processor
-            _model = None
-            _processor = None
-            _transcriber = None
-
-            # Force garbage collection
-            import gc
-            import torch
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-
-
-def get_model_info() -> Dict[str, str]:
-    """Return info about the loaded model."""
-    return {
-        "model_name": MODEL_NAME,
-        "quantization_enabled": ENABLE_QUANTIZATION,
-        "torch_compile_enabled": ENABLE_TORCH_COMPILE,
-        "is_loaded": is_model_loaded(),
-    }
+SAMPLE_RATE = 16000  # Expected input sample rate for audio conversion
 
 
 # =============================================================================
@@ -443,6 +38,12 @@ def _get_transcription_api_url() -> Optional[str]:
         return settings.TRANSCRIPTION_API_URL
     except Exception:
         return os.getenv("TRANSCRIPTION_API_URL")
+
+
+def is_using_external_api() -> bool:
+    """Check if external transcription API is configured."""
+    url = _get_transcription_api_url()
+    return url is not None and len(url) > 0
 
 
 def _convert_to_wav(audio_path: str) -> bytes:
@@ -471,26 +72,33 @@ def _convert_to_wav(audio_path: str) -> bytes:
     return wav_buffer.read()
 
 
-def _transcribe_via_external_api(audio_path: str) -> str:
+def transcribe_audio(audio_path: str) -> str:
     """
-    Transcribe audio by calling external API (Colab notebook).
+    Transcribe audio file to text using external MERaLiON API.
 
     Args:
-        audio_path: Path to audio file (any format - will be converted to WAV)
+        audio_path: Path to audio file (16kHz mono WAV recommended)
 
     Returns:
         Raw transcription text
 
     Raises:
-        RuntimeError: If API call fails
+        FileNotFoundError: If audio file doesn't exist
+        RuntimeError: If transcription fails or API not configured
     """
+    if not os.path.exists(audio_path):
+        raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
     api_url = _get_transcription_api_url()
     if not api_url:
-        raise RuntimeError("TRANSCRIPTION_API_URL not configured")
+        raise RuntimeError(
+            "TRANSCRIPTION_API_URL not configured. "
+            "Set this environment variable to your Colab ngrok URL."
+        )
 
     transcribe_endpoint = f"{api_url.rstrip('/')}/transcribe"
 
-    logger.info(f"Calling external transcription API: {transcribe_endpoint}")
+    logger.info(f"Transcribing audio via external API: {audio_path}")
 
     try:
         # Convert to WAV format (handles m4a, mp3, etc.)
@@ -514,7 +122,7 @@ def _transcribe_via_external_api(audio_path: str) -> str:
         # API returns: {"raw_transcription": ..., "corrected": ..., "word_counts": ...}
         raw_text = result.get("raw_transcription", "")
 
-        logger.info(f"External API transcription complete: {len(raw_text)} chars")
+        logger.info(f"Transcription complete: {len(raw_text)} chars")
         return raw_text
 
     except httpx.TimeoutException:
@@ -525,19 +133,26 @@ def _transcribe_via_external_api(audio_path: str) -> str:
         raise RuntimeError(f"External transcription failed: {e}")
 
 
-def _transcribe_segment_via_external_api(audio_bytes: bytes) -> str:
+def transcribe_segment(audio_bytes: bytes, sample_rate: int = SAMPLE_RATE) -> str:
     """
-    Transcribe audio bytes by calling external API.
+    Transcribe audio bytes directly using external API.
 
     Args:
         audio_bytes: Raw audio data (WAV format)
+        sample_rate: Sample rate of the audio (default: 16000)
 
     Returns:
         Raw transcription text
+
+    Raises:
+        RuntimeError: If transcription fails or API not configured
     """
     api_url = _get_transcription_api_url()
     if not api_url:
-        raise RuntimeError("TRANSCRIPTION_API_URL not configured")
+        raise RuntimeError(
+            "TRANSCRIPTION_API_URL not configured. "
+            "Set this environment variable to your Colab ngrok URL."
+        )
 
     transcribe_endpoint = f"{api_url.rstrip('/')}/transcribe"
 
@@ -560,12 +175,6 @@ def _transcribe_segment_via_external_api(audio_bytes: bytes) -> str:
 
     except Exception as e:
         raise RuntimeError(f"External transcription failed: {e}")
-
-
-def is_using_external_api() -> bool:
-    """Check if external transcription API is configured."""
-    url = _get_transcription_api_url()
-    return url is not None and len(url) > 0
 
 
 # =============================================================================
@@ -718,7 +327,7 @@ WORD_CORRECTIONS: Dict[str, str] = {
     # 'huh' is distinct from 'hor' - don't convert
     'arh': 'ah',
     'err': 'eh',  # Model often mishears 'eh' as 'err'
-    'shio': 'shiok',  # Needs word boundary to avoid shiok → shiokk
+    'shio': 'shiok',  # Needs word boundary to avoid shiok -> shiokk
 }
 
 # Target Singlish words to count
