@@ -1,4 +1,4 @@
-# LahStats Mobile App
+# Rabak Mobile App
 
 React Native mobile app for tracking Singlish word usage in group conversations.
 

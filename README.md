@@ -1,4 +1,4 @@
-# LahStats
+# Rabak
 
 > "Track your lah, lor, and more"
 
@@ -8,7 +8,7 @@ Singlish word tracking app with AI speaker recognition. One phone records everyo
 
 - **One-phone group recording** — Place one phone on the table, record everyone
 - **AI speaker diarization** — Automatically identify who spoke when
-- **Singlish word detection** — Track vulgar slang, particles, and colloquial expressions
+- **Singlish word detection** — Track particles, expressions, and colloquial terms
 - **Claiming UI** — Listen to audio samples, click "That's me!"
 - **Spotify Wrapped-style stats** — Weekly/monthly word usage statistics
 
@@ -20,9 +20,8 @@ Singlish word tracking app with AI speaker recognition. One phone records everyo
 | Backend | FastAPI (Python) |
 | ASR | MERaLiON-2-10B-ASR |
 | Diarization | pyannote/speaker-diarization-3.1 |
-| Database | PostgreSQL + Firebase |
-| Queue | Redis |
-| Storage | AWS S3 |
+| Database | Supabase (PostgreSQL + Auth) |
+| ML Processing | Google Colab |
 
 ## Quick Start
 
@@ -129,16 +128,13 @@ Hack-Roll/
 │   ├── tests/
 │   │   ├── test_transcription.py
 │   │   └── test_word_counting.py
-│   ├── processor.py          # Pipeline orchestration (Phase 4)
+│   ├── processor.py          # Pipeline orchestration
 │   └── requirements.txt
 ├── scripts/
 │   ├── test_meralion.py      # MERaLiON test suite
 │   └── test_pyannote.py      # pyannote test suite
-├── ml/
-│   ├── scripts/
-│   │   ├── prepare_singlish_data.py  # Training data prep
-│   │   └── filter_imda.py            # IMDA corpus filtering
-│   └── tests/
+├── mobile/
+│   └── src/                  # React Native app
 ├── docs/
 │   └── MODELS.md             # Detailed model documentation
 ├── .planning/
@@ -166,9 +162,9 @@ The app tracks these Singlish expressions:
 
 | Category | Words |
 |----------|-------|
-| Vulgar | walao, cheebai, lanjiao |
 | Particles | lah, lor, sia, meh, leh, hor, ah |
-| Colloquial | can, paiseh, shiok, sian, alamak, aiyo, bodoh, kiasu, kiasi, bojio |
+| Expressions | walao, alamak, aiyo, bojio |
+| Colloquial | can, paiseh, shiok, sian, bodoh, kiasu, kiasi |
 
 ## Post-Processing Corrections
 
@@ -177,21 +173,11 @@ The ASR may mishear Singlish words. Automatic corrections handle common cases:
 | ASR Output | Corrected To |
 |------------|--------------|
 | "while up" | walao |
-| "cheap buy" | cheebai |
-| "lunch hour" | lanjiao |
 | "pie say" | paiseh |
 | "shook" | shiok |
+| "a llama" | alamak |
 
 See `backend/services/transcription.py` for the full corrections dictionary.
-
-## Team
-
-| Name | Role |
-|------|------|
-| Nickolas | ML + Full Stack |
-| Winston | Backend |
-| Harshith | Mobile |
-| Toshiki | Frontend/Design |
 
 ## Roadmap
 
@@ -200,13 +186,12 @@ See `backend/services/transcription.py` for the full corrections dictionary.
 | 1. Model Setup & Validation | Complete |
 | 2. Speaker Diarization Service | Complete |
 | 3. ASR Transcription Service | Complete |
-| 4. Processing Pipeline Integration | In Progress |
+| 4. Processing Pipeline Integration | Complete |
 
 ## Resources
 
 - [MERaLiON Paper](https://arxiv.org/abs/2412.09818)
 - [pyannote Documentation](https://github.com/pyannote/pyannote-audio)
-- [IMDA National Speech Corpus](https://www.imda.gov.sg/how-we-can-help/national-speech-corpus)
 
 ## License
 
